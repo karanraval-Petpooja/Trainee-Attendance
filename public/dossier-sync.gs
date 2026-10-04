@@ -4,6 +4,12 @@
  * Works with VIEW access to the Dossier: this script lives in YOUR Google account
  * and only reads the sheet. It never changes the Dossier.
  *
+ * Two directions:
+ *  • Dossier → app (needs VIEW access): new trainees, details, TCD / status, RAG, attendance.
+ *  • App → Dossier (WRITE_BACK: true): attendance marked in the app, RAG and RAG Remarks are
+ *    written cell by cell into Day 1…Day 40, RAG and RAG Remarks. Works when you can type in
+ *    those columns (even if the first columns are locked). Locked cells are skipped and logged.
+ *
  * SETUP
  *  1. Go to https://script.google.com → New project. Delete the sample code and paste this file.
  *  2. Fill in CONFIG below and press Save (Ctrl + S).
@@ -25,6 +31,9 @@ const CONFIG = {
   DEFAULT_TRAINER_EMAIL: '',                        // optional: trainer for rows without a trainer name
   IMPORT_ATTENDANCE: true,                          // also copy P / AB / HD / Holiday (never overwrites app entries)
   SYNC_EVERY_HOURS: 1,                              // 1, 2, 4, 6, 8 or 12
+  WRITE_BACK: false,                                // true = also write app attendance / RAG into the Dossier (you must be able to type in those columns)
+  WRITE_BACK_DAYS: 90,                              // how far back to write attendance marked in the app
+  HEADER_ROW: 1,                                    // row with the headings (Name, DOJ, Day 1, RAG …)
 
   // OPTIONAL: fill missing E Codes from the Contact Details sheet.
   // Works if YOUR Google account can view that sheet. Leave SHEET_ID empty to switch off.
@@ -80,6 +89,7 @@ function syncDossier() {
     total.rows += body.rows; total.added += body.added; total.updated += body.updated;
     total.attendanceDays += body.attendanceDays; total.errors = total.errors.concat(body.errors || []);
   }
+  if (CONFIG.WRITE_BACK) writeBackToDossier();
   Logger.log('Synced ' + total.rows + ' rows: ' + total.added + ' added, ' + total.updated + ' updated, ' +
              total.attendanceDays + ' attendance days.' + (total.errors.length ? '\nProblems:\n' + total.errors.join('\n') : ''));
 }
@@ -103,6 +113,95 @@ function readContactCodes() {
   }
   Logger.log('Contact Details: ' + Object.keys(map).length + ' E Codes found.');
   return map;
+}
+
+// ---------------------------------------------------------------------------
+// App → Dossier: attendance marked in the app, RAG and RAG Remarks
+// ---------------------------------------------------------------------------
+function writeBackToDossier() {
+  const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/dossier-export?days=' + CONFIG.WRITE_BACK_DAYS, {
+    headers: { 'x-sync-secret': CONFIG.SYNC_SECRET }, muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Write-back failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 300));
+  const data = JSON.parse(res.getContentText());
+
+  const sheet = SpreadsheetApp.openById(CONFIG.SHEET_ID).getSheetByName(CONFIG.TAB_NAME);
+  const lastCol = sheet.getLastColumn();
+  const head = sheet.getRange(CONFIG.HEADER_ROW, 1, 1, lastCol).getDisplayValues()[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  const col = function (name) { return head.indexOf(name); };
+  const cName = col('name'), cDoj = col('doj'), cEmail = col('official email'), cCode = col('emp code');
+  const cRag = col('rag'), cRagRemarks = col('rag remarks'), cDay1 = col('day 1');
+  if (cName < 0 || cDoj < 0 || cDay1 < 0) throw new Error('Headings "Name", "DOJ" and "Day 1" were not found in row ' + CONFIG.HEADER_ROW);
+  var nDays = 0;
+  while (cDay1 + nDays < head.length && /^day \d+$/.test(head[cDay1 + nDays])) nDays++;
+
+  const first = CONFIG.FIRST_DATA_ROW;
+  const n = sheet.getLastRow() - first + 1;
+  if (n < 1) return;
+  const shown = sheet.getRange(first, 1, n, lastCol).getDisplayValues();
+  const days = sheet.getRange(first, cDay1 + 1, n, nDays).getDisplayValues(); // read only
+
+  // Find each trainee's row: Emp code → official email → Name + DOJ
+  const byCode = {}, byEmail = {}, byKey = {};
+  shown.forEach(function (r, i) {
+    if (cCode >= 0 && r[cCode]) byCode[String(r[cCode]).trim()] = i;
+    if (cEmail >= 0 && r[cEmail]) byEmail[String(r[cEmail]).trim().toLowerCase()] = i;
+    const d = toIso(r[cDoj]);
+    if (r[cName] && d) byKey[String(r[cName]).trim().toLowerCase() + '|' + d] = i;
+  });
+
+  const CODE = { present: 'P', absent: 'AB', half_day: 'HD', holiday: 'Holiday' };
+  var cells = 0, rags = 0, missing = 0, blocked = [];
+  // Write one cell; protected (locked) cells are skipped and listed in the log
+  const put = function (row, colIdx, value, label) {
+    try { sheet.getRange(first + row, colIdx + 1).setValue(value); return true; }
+    catch (e) { blocked.push(label + ' (' + shown[row][cName] + ')'); return false; }
+  };
+  data.trainees.forEach(function (t) {
+    var i = (t.code && byCode[t.code] !== undefined) ? byCode[t.code]
+      : (t.email && byEmail[t.email] !== undefined) ? byEmail[t.email]
+      : byKey[t.name.trim().toLowerCase() + '|' + t.doj];
+    if (i === undefined) { if (t.attendance.length || t.rag) missing++; return; }
+    t.attendance.forEach(function (a) {
+      const k = dayNumber(t.start, a[0]); // 0 = Day 1
+      if (k < 0 || k >= nDays) return;
+      const v = CODE[a[1]];
+      if (v && String(days[i][k]).trim() !== v && put(i, cDay1 + k, v, 'Day ' + (k + 1))) { days[i][k] = v; cells++; }
+    });
+    if (cRag >= 0 && t.rag) {
+      const ragText = t.rag.charAt(0).toUpperCase() + t.rag.slice(1);
+      if (String(shown[i][cRag]).trim() !== ragText && put(i, cRag, ragText, 'RAG')) rags++;
+    }
+    if (cRagRemarks >= 0 && t.ragRemark && String(shown[i][cRagRemarks]).trim() !== t.ragRemark.trim()) {
+      if (put(i, cRagRemarks, t.ragRemark, 'RAG Remarks')) rags++;
+    }
+  });
+  Logger.log('Written to Dossier: ' + cells + ' attendance cells, ' + rags + ' RAG / remark cells.' +
+             (missing ? ' ' + missing + ' trainee(s) from the app were not found in the Dossier.' : '') +
+             (blocked.length ? '\nLocked cells skipped (' + blocked.length + '): ' + blocked.slice(0, 15).join(', ') : ''));
+}
+
+// "06-Jul-26", "06-Jul-2026", "2026-07-06" or "06/07/2026" → "2026-07-06"
+function toIso(v) {
+  const s = String(v || '').trim();
+  const M = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) return m[1] + '-' + pad2(m[2]) + '-' + pad2(m[3]);
+  m = s.match(/^(\d{1,2})[-\s\/]([A-Za-z]{3})[A-Za-z]*[-\s\/,]*(\d{2,4})$/);
+  if (m && M[m[2].toLowerCase()]) return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + pad2(M[m[2].toLowerCase()]) + '-' + pad2(m[1]);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m) return m[3] + '-' + pad2(m[2]) + '-' + pad2(m[1]);
+  return '';
+}
+function pad2(x) { return ('0' + x).slice(-2); }
+
+// Dossier day columns skip Sundays: Day 1 = training start
+function dayNumber(startIso, dateIso) {
+  var d = new Date(startIso + 'T00:00:00Z'), end = new Date(dateIso + 'T00:00:00Z');
+  if (end < d || end.getUTCDay() === 0) return -1;
+  var k = 0;
+  while (d < end) { d.setUTCDate(d.getUTCDate() + 1); if (d.getUTCDay() !== 0) k++; }
+  return k;
 }
 
 function createTrigger() {

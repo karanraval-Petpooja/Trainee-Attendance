@@ -31,8 +31,49 @@ Trainees do **not** log in.
 Demo logins (password `Demo@123`):
 
 - `manager@demo.com`: manager
-- `karan@demo.com` (or Employee ID `TRN-01`): trainer Karan Raval with 10 trainees (Chirag, Sanjukta, …)
-- `meet@demo.com` (or `TRN-02`): trainer Meet Shah with 6 trainees, has missed 4 days → escalation
+- `karan@demo.com` (or Employee ID `TRN-01`): trainer Karan Raval: ran NHT01 until the switch, now runs NHT03
+- `meet@demo.com` (or `TRN-02`): trainer Meet Shah (NHT02), has missed 4 days → escalation
+- `sanjukta@demo.com` (or `TRN-03`): took over half of NHT01 from Karan for Sales Training 7 days ago
+
+## Batches (inside Trainees & Batches)
+
+- **New Batch** creates the next code automatically (`NHT01`, `NHT02`, … — prefix in Settings) for a trainer.
+- Put trainees in a batch (Add Trainee, *Paste from Excel*, or select rows → **Move to batch**).
+- **Switch trainer** works for any set of trainees from a date: the whole batch, half of it, or one person. The rest stay where they are.
+  - Example: NHT01 with Karan from 1 Oct; 10 trainees → Sanjukta and 5 → Meet from 15 Oct; 5 stay with Karan.
+  - Each trainer's register, calendar, sheet and alerts show only their own days; the manager sees everything.
+  - Managers can **Undo switch** (selected trainees or the whole batch).
+- Click a batch chip to see who has how many trainees now and the trainer history.
+
+## Going live with real data
+
+1. Supabase SQL Editor: run `supabase/remove_demo_data.sql` (deletes demo logins, trainees and attendance).
+2. Open the app. If no login is left, the login page lets you **create the first manager**.
+3. Manager → **Trainers**: add the trainers (e.g. Samir, Istiyak, Navya, Khushal, Karan Raval).
+4. Manager → **Trainees & Batches → Import from Dossier**: upload the Dossier Excel file (File → Download → Microsoft Excel) or paste whole rows. Row colours are understood: light blue = DOJ revised, yellow = left, dark pink / cream = handed over, white = in training. For Embedded Finance, Payroll, Invoice and NPU, a handed-over (pink) row counts the days the Dossier stopped updating, up to the TCD, as Present. It reads E Code, DOJ, TCD / LWD, status, trainer, track, RAG, remarks and the daily attendance (P / AB / HD / Holiday, counted from the DOJ, Sundays skipped). Pasting again later updates the same trainees.
+
+## Dossier connection (automatic)
+
+Full step-by-step: **GO_LIVE.md**. With edit access and `WRITE_BACK: true`, attendance, RAG and remarks marked in the app are also written back into the Dossier.
+
+
+The app must be online (Vercel) for this — Google can't reach localhost.
+1. Supabase: run `supabase/update_dossier_sync.sql`.
+2. Settings → Dossier connection → **Generate a secret**. Add it as `DOSSIER_SYNC_SECRET` in Vercel (and `.env.local`), redeploy.
+3. Settings → **Download Google script** (or `integrations/dossier-sync.gs`). In script.google.com create a new project, paste it, fill in CONFIG (app URL, secret, Dossier sheet ID, tab name, first data row).
+4. Run `syncDossier` once (allow access), then run `createTrigger` → syncs every hour.
+
+Matching: E Code → official email → Name + DOJ, so trainees added before they get an E Code are updated (not duplicated) when the code appears. Optional: the script can fill missing E Codes from the Contact Details sheet (CONFIG.CONTACTS) if your Google account can view it.
+
+Sync rules: the Dossier is only read. New people are added; existing ones get updated details, TCD and status. RAG / remarks and trainers set in the app are never overwritten (the Dossier only fills blanks). Attendance only fills days not yet marked in the app. Trainees brought back for training in the app keep their app dates.
+
+## RAG & remarks
+
+- Trainers set **RAG (Green / Amber / Red) + remarks** for trainees they have or had (click the RAG chip on Trainees or in the RAG Report).
+- No approval step: what the trainer saves is final.
+- **Handover needs RAG:** a trainee can't be handed over until their RAG is marked (the Handover dialog lists who is missing and lets you set it right there).
+- **RAG Report** lists and downloads them (Excel). They are **not** part of the Monthly Sheet.
+- The Monthly Sheet's *Remarks* column only shows the exit type: Resigned, DOJ Revised, Offer Revoked, Not Certified, Service Not Required.
 
 ## Daily flow
 
@@ -70,10 +111,22 @@ Import the repo, add the same env vars, deploy. In Supabase → Authentication �
 ```
 supabase/schema.sql                  tables, RLS, mark_attendance(), process_missed_attendance()
 supabase/00_reset_old_version.sql    removes the earlier version before reinstalling
+supabase/update_batches.sql          adds batches to an existing install (keeps data)
+supabase/update_dossier_rag.sql      adds RAG, Dossier fields and attendance import (keeps data)
+supabase/update_rag_review.sql       trainer/manager RAG updates, no approval (keeps data)
+supabase/remove_demo_data.sql        deletes demo data before going live
+app/(app)/rag                        RAG & remarks report
+lib/parseDossier.js                  Dossier paste parser
+lib/dossierSync.js                   shared rules for Dossier import / sync
+app/api/dossier-sync                 endpoint the Google script sends rows to
+app/api/dossier-export               what the script writes back into the Dossier
+supabase/update_writeback.sql        tracks app vs imported attendance (keeps data)
+integrations/dossier-sync.gs         Google Apps Script (also downloadable in Settings)
+supabase/update_dossier_sync.sql     adds the sync log (keeps data)
 app/(app)/dashboard                  trainer: today's register · manager: trainer-wise status
 app/(app)/attendance                 register for any date (manager can pick a trainer)
 app/(app)/timeline                   continuous date-wise calendar (batch summary, grid, one trainee)
-app/(app)/trainees                   add / edit / paste from Excel
+app/(app)/trainees                   trainees + batches: add, paste from Excel, switch trainer, handover
 app/(app)/trainers                   trainer login accounts (manager)
 app/(app)/reports                    monthly HR sheet + Excel download
 app/(app)/history, analytics, notifications, settings, profile

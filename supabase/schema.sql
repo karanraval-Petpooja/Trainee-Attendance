@@ -64,6 +64,7 @@ create table if not exists public.attendance (
   marked_by        uuid references public.profiles(id) on delete set null,
   marked_at        timestamptz not null default now(),
   is_late          boolean not null default false,
+  source           text not null default 'app',   -- 'app' = marked in the app, 'dossier' = imported
   unique (trainee_id, attendance_date)
 );
 create index if not exists attendance_date_idx on public.attendance (attendance_date);
@@ -532,12 +533,12 @@ begin
     select * into t from trainees where id = (r->>'trainee_id')::uuid;
     if t.id is null or not trainee_active_on(t, d) then continue; end if;
     if p_overwrite then
-      insert into attendance (trainee_id, attendance_date, status, marked_by, marked_at, is_late)
-      values (t.id, d, r->>'status', auth.uid(), now(), false)
-      on conflict (trainee_id, attendance_date) do update set status = excluded.status, marked_by = excluded.marked_by, marked_at = now();
+      insert into attendance (trainee_id, attendance_date, status, marked_by, marked_at, is_late, source)
+      values (t.id, d, r->>'status', auth.uid(), now(), false, 'dossier')
+      on conflict (trainee_id, attendance_date) do update set status = excluded.status, marked_by = excluded.marked_by, marked_at = now(), source = 'dossier';
     else
-      insert into attendance (trainee_id, attendance_date, status, marked_by, marked_at, is_late)
-      values (t.id, d, r->>'status', auth.uid(), now(), false)
+      insert into attendance (trainee_id, attendance_date, status, marked_by, marked_at, is_late, source)
+      values (t.id, d, r->>'status', auth.uid(), now(), false, 'dossier')
       on conflict (trainee_id, attendance_date) do nothing;
     end if;
     get diagnostics cnt = row_count;
@@ -605,7 +606,7 @@ begin
     insert into attendance (trainee_id, attendance_date, status, marked_by, marked_at, is_late)
     values (tr.id, p_date, st, me.id, now(), late)
     on conflict (trainee_id, attendance_date) do update
-      set status = excluded.status, marked_by = excluded.marked_by, marked_at = now();
+      set status = excluded.status, marked_by = excluded.marked_by, marked_at = now(), source = 'app';
     n := n + 1;
   end loop;
 

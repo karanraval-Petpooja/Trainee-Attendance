@@ -39,7 +39,7 @@ export default function DossierConnection() {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-bold">Dossier connection</h2>
-          <p className="mt-1 text-sm text-slate-500">Copies trainees, RAG and attendance from the Dossier sheet automatically. The Dossier is only read, never changed.</p>
+          <p className="mt-1 text-sm text-slate-500">Copies new trainees, RAG and attendance from the Dossier automatically. With edit access (WRITE_BACK in the script), attendance, RAG and remarks marked here are written back into the Dossier.</p>
         </div>
         <button className="btn-ghost btn-sm" onClick={load} aria-label="Refresh"><RefreshCw size={14} /></button>
       </div>
