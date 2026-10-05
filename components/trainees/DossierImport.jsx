@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { sb } from '@/lib/supabase';
 import { fmtMedium } from '@/lib/dates';
 import { parseDossier } from '@/lib/parseDossier';
-import { executeDossierSync, makeMatcher, planDossierSync } from '@/lib/dossierSync';
+import { executeDossierSync, makeMatcher, matchTrainerName, planDossierSync } from '@/lib/dossierSync';
 import { readDossierXlsx } from '@/lib/readDossierXlsx';
 import { EXIT_LABELS, RAG } from '@/lib/status';
 import { useApp } from '../AppShell';
@@ -42,7 +42,7 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
 
   // Detected trainer names → app trainer accounts (auto-match on first name)
   const detected = useMemo(() => [...new Set(parsed.rows.map((r) => r.trainerName).filter(Boolean))].sort(), [parsed.rows]);
-  const autoMatch = (n) => trainers.find((t) => t.name.toLowerCase().split(' ')[0] === n.toLowerCase().split(' ')[0])?.id || '';
+  const autoMatch = (n) => matchTrainerName(n, trainers) || '';
   const trainerFor = (r) => (r.trainerName ? (mapping[r.trainerName] ?? autoMatch(r.trainerName)) : '') || defaultTrainer || null;
   const tName = (id) => trainers.find((t) => t.id === id)?.name || '—';
 
@@ -54,7 +54,8 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
     setWorking(true);
     setError('');
     try {
-      const plan = planDossierSync(parsed.rows, trainees, (n) => trainerFor({ trainerName: n }));
+      const switched = new Set(trainees.filter((t) => t._assign?.length).map((t) => t.id));
+      const plan = planDossierSync(parsed.rows, trainees, (n) => trainerFor({ trainerName: n }), { switched });
       const res = await executeDossierSync(sb(), plan, { withAttendance, overwrite, createdBy: profile.id, onProgress: setProgress });
       if (res.errors.length) setError(`Saved with some problems: ${res.errors.slice(0, 3).join('; ')}${res.errors.length > 3 ? ` (+${res.errors.length - 3} more)` : ''}`);
       onDone(`Dossier imported: ${res.added} added, ${res.updated} updated${withAttendance ? `, ${res.days} attendance days saved` : ''}.`);

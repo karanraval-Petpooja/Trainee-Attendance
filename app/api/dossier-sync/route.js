@@ -62,9 +62,13 @@ export async function POST(req) {
       : null;
     const trainerFor = makeTrainerResolver(trainers, { mapping: body.trainerMap || {}, defaultTrainerId });
 
-    const plan = planDossierSync(rows, existing, trainerFor);
+    const switchedRows = await fetchAll(() => a.from('trainee_assignments').select('trainee_id'));
+    const switched = new Set(switchedRows.map((x) => x.trainee_id));
+    const plan = planDossierSync(rows, existing, trainerFor, { switched });
+    // Names that match no trainer or more than one (e.g. just "Karan" when there are two)
+    const unmatched = [...new Set(rows.map((r) => r.trainerName).filter((n) => n && !trainerFor(n)))];
     const res = await executeDossierSync(a, plan, { withAttendance: body.importAttendance !== false, overwrite: false });
-    const errors = [...parsed.errors, ...res.errors];
+    const errors = [...parsed.errors, ...res.errors, ...unmatched.map((n) => `Trainer "${n}" matches no single trainer login. Use the full name as on the Trainers page.`)];
 
     await a.from('sync_log').insert({
       run_id: String(body.runId || '').slice(0, 64) || null, source: 'dossier', rows_received: rows.length,
