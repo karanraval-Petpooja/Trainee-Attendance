@@ -11,6 +11,7 @@ import { EXIT_LABELS, openPeriod, periodsOf, traineeActiveOn } from '@/lib/statu
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
+import SyncNowButton from '@/components/SyncNowButton';
 
 const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
@@ -226,6 +227,7 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
     setError('');
     const row = {
       name: f.name.trim(), employee_code: clean(f.employee_code), department: clean(f.department),
+      official_email: clean(f.official_email)?.toLowerCase() || null, personal_email: clean(f.personal_email)?.toLowerCase() || null,
       reporting_manager: clean(f.reporting_manager),
       batch_id: f.batch_id || null,
     };
@@ -254,6 +256,8 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label className="label" htmlFor="t-name">E Name</label><input id="t-name" className="input" value={f.name} onChange={set('name')} /></div>
         <div><label className="label" htmlFor="t-code">E Code</label><input id="t-code" className="input" value={f.employee_code || ''} onChange={set('employee_code')} placeholder="5601" /></div>
+        <div><label className="label" htmlFor="t-pmail">Personal email</label><input id="t-pmail" type="email" className="input" value={f.personal_email || ''} onChange={set('personal_email')} placeholder="name@gmail.com" /></div>
+        <div><label className="label" htmlFor="t-omail">Official email</label><input id="t-omail" type="email" className="input" value={f.official_email || ''} onChange={set('official_email')} placeholder="name@petpooja.com" /><p className="mt-1 text-xs text-slate-400">Shown instead of the personal email once filled in.</p></div>
         <div>
           <label className="label" htmlFor="t-doj">DOJ</label>
           <input id="t-doj" type="date" className="input disabled:bg-slate-50 disabled:text-slate-500" value={f.joining_date || ''} onChange={set('joining_date')} disabled={!isManager && !isNew} />
@@ -543,7 +547,7 @@ export default function TraineesPage() {
   const filtered = trainees.filter((t) => ((show === 'all' && !t.deleted_at) || stage(t) === show)
     && (trainerFilter === 'all' || t.trainer_id === trainerFilter)
     && (batchFilter === 'all' || (batchFilter === 'none' ? !t.batch_id : t.batch_id === batchFilter))
-    && [t.name, t.employee_code, t.reporting_manager, t.track].some((v) => v?.toLowerCase().includes(q.toLowerCase())));
+    && [t.name, t.employee_code, t.reporting_manager, t.track, t.official_email, t.personal_email].some((v) => v?.toLowerCase().includes(q.toLowerCase())));
   const counts = trainees.reduce((m, t) => ({ ...m, [stage(t)]: (m[stage(t)] || 0) + 1 }), {});
 
   const toggle = async (t) => {
@@ -596,13 +600,14 @@ export default function TraineesPage() {
     showToast(status === 'closed' ? `${batch.code} closed.` : `${batch.code} reopened.`);
     reload();
   };
-  const blank = { name: '', employee_code: '', joining_date: now.date, tcd_lwd: '', exit_reason: '', reporting_manager: '', department: '', trainer_id: isManager ? '' : profile.id, batch_id: batchFilter !== 'all' && batchFilter !== 'none' ? batchFilter : '' };
+  const blank = { name: '', employee_code: '', official_email: '', personal_email: '', joining_date: now.date, tcd_lwd: '', exit_reason: '', reporting_manager: '', department: '', trainer_id: isManager ? '' : profile.id, batch_id: batchFilter !== 'all' && batchFilter !== 'none' ? batchFilter : '' };
 
   return (
     <div className="space-y-5">
       <PageHeader title={isManager ? 'Trainees & batches' : 'My trainees & batches'} subtitle={`${counts.training || 0} in training today`}
         actions={(
           <>
+            <SyncNowButton onDone={reload} />
             {isManager && <button className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Import from Dossier</button>}
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
@@ -684,7 +689,7 @@ export default function TraineesPage() {
             <table className="tbl">
               <thead><tr>
                 <th className="w-10"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={allVisibleSelected} onChange={toggleAll} aria-label="Select all shown trainees" /></th>
-                <th>E Code</th><th>E Name</th><th>Batch</th><th>DOJ</th><th>TCD / LWD</th><th>Reporting manager</th><th>Trainer now</th><th>RAG</th><th className="text-right">Actions</th>
+                <th>E Code</th><th>E Name</th><th>Email</th><th>Batch</th><th>DOJ</th><th>TCD / LWD</th><th>Reporting manager</th><th>Trainer now</th><th>RAG</th><th className="text-right">Actions</th>
               </tr></thead>
               <tbody>
                 {filtered.map((t) => (
@@ -694,6 +699,11 @@ export default function TraineesPage() {
                     <td>
                       <Link href={`/timeline?trainee=${t.id}`} className="font-semibold text-slate-800 hover:underline">{t.name}</Link>
                       {(t.track || t.designation) && <div className="text-xs text-slate-400">{[t.track, t.designation].filter(Boolean).join(' · ')}</div>}
+                    </td>
+                    <td className="text-xs">
+                      {t.official_email ? <span className="text-slate-700">{t.official_email}</span>
+                        : t.personal_email ? <span className="text-slate-500">{t.personal_email}<span className="ml-1 rounded bg-amber-50 px-1 text-[10px] font-semibold text-amber-700">personal</span></span>
+                        : <span className="text-slate-300">—</span>}
                     </td>
                     <td>{t._batch ? <span className="rounded-md bg-ink-50 px-2 py-0.5 text-xs font-bold text-ink-700">{t._batch.code}</span> : <span className="text-slate-300">—</span>}</td>
                     <td className="text-slate-600">{fmtMedium(t.joining_date)}</td>

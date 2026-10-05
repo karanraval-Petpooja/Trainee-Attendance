@@ -75,7 +75,7 @@ export async function POST(req) {
       added: res.added, updated: res.updated, attendance_days: res.days, errors: errors.length ? errors.slice(0, 20).join('\n') : null,
     });
 
-    return Response.json({ ok: true, rows: rows.length, added: res.added, updated: res.updated, attendanceDays: res.days, errors: errors.slice(0, 20) });
+    return Response.json({ ok: true, rows: rows.length, added: res.added, updated: res.updated, trainersChanged: res.trainersChanged || 0, attendanceDays: res.days, errors: errors.slice(0, 20) });
   } catch (e) {
     return errorResponse(e);
   }
