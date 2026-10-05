@@ -9,7 +9,10 @@ Run any you haven't run yet, in this order:
 5. `supabase/update_rag_review.sql`
 6. `supabase/update_dossier_sync.sql`
 7. `supabase/update_retraining.sql`
-8. `supabase/update_writeback.sql`  ← new
+8. `supabase/update_writeback.sql`
+9. `supabase/update_ojt.sql`
+10. `supabase/update_sync_button.sql`
+11. `supabase/update_personal_email.sql`
 (Fresh project instead? Run only `supabase/FULL_INSTALL.sql`.)
 
 ## B. Put the code on GitHub
@@ -43,6 +46,8 @@ Run any you haven't run yet, in this order:
    - `WRITE_BACK` = `true` if you can type in the Day, RAG and RAG Remarks columns (locked first columns are fine)
 3. Ctrl + S → choose `syncDossier` → **Run** → Allow access.
 4. Choose `createTrigger` → **Run** → syncs every hour.
+5. "Get new trainees" button: **Deploy → New deployment → ⚙ Web app** → Execute as **Me**, Who has access **Anyone** → **Deploy** → copy the URL (ends with `/exec`) → in the app **Settings → Dossier connection → Google script web app URL → Save**.
+   After changing the script later: **Deploy → Manage deployments → ✏️ → Version: New version → Deploy** (the URL stays the same).
 
 ### What the connection does
 | Direction | What | Needs |

@@ -75,10 +75,10 @@ Sync rules: the Dossier is only read. New people are added; existing ones get up
 - **RAG Report** lists and downloads them (Excel). They are **not** part of the Monthly Sheet.
 - The Monthly Sheet's *Remarks* column only shows the exit type: Resigned, DOJ Revised, Offer Revoked, Not Certified, Service Not Required.
 
-## OJT / Upskill / PIP
+## OJT / Upskill / PIP / Refresher
 
-- **OJT / Upskill / PIP → Sessions:** choose the type, enter how long the session ran and the minimum a trainee must attend (below it, even by a minute = Absent, shown in red), then upload the Google Meet attendance file (First name, Last name, Email, Duration, Time joined, Time exited). First + last names are joined; name, date and session length are filled in from the file (length = start time → when most people left, rounded to 5 min; minimum = half). Scores (Score tab) are optional. People who joined twice are merged. Download the session again in the same 3-tab format with the pivot table.
-- **OJT / Upskill / PIP → Charts:** assessment result, attendance, score distribution, time attended, score by participant, and a session comparison when several are ticked. Each chart: Download PNG, Copy image, Copy data. "Download all charts" saves one PNG.
+- **OJT / Upskill / PIP / Refresher → Sessions:** choose the type, enter how long the session ran and the minimum a trainee must attend (below it, even by a minute = Absent, shown in red), then upload the Google Meet attendance file (First name, Last name, Email, Duration, Time joined, Time exited). First + last names are joined; name, date and session length are filled in from the file (length = start time → when most people left, rounded to 5 min; minimum = half). Scores (Score tab) are optional. People who joined twice are merged. Download the session again in the same 3-tab format with the pivot table.
+- **OJT / Upskill / PIP / Refresher → Charts:** assessment result, attendance, score distribution, time attended, score by participant, and a session comparison when several are ticked. Each chart: Download PNG, Copy image, Copy data. "Download all charts" saves one PNG.
 - Database: `supabase/update_ojt.sql`.
 
 ## Daily flow
