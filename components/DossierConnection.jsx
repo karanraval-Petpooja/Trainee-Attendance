@@ -4,10 +4,23 @@ import { Copy, Download, RefreshCw } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtDateTime } from '@/lib/dates';
 import { useApp } from './AppShell';
+import SyncNowButton from './SyncNowButton';
 
 // Settings card: is the Dossier sync set up, and what did the last runs do?
 export default function DossierConnection() {
-  const { tz, showToast } = useApp();
+  const { tz, showToast, settings, reloadSettings } = useApp();
+  const [scriptUrl, setScriptUrl] = useState(settings?.dossier_script_url || '');
+  const [savingUrl, setSavingUrl] = useState(false);
+  const saveUrl = async () => {
+    const v = scriptUrl.trim();
+    if (v && !/^https:\/\/script\.google\.com\/.+\/exec$/.test(v)) { showToast('Paste the Web app URL from Apps Script. It starts with https://script.google.com/ and ends with /exec', 'error'); return; }
+    setSavingUrl(true);
+    const { error } = await sb().from('settings').update({ dossier_script_url: v || null }).eq('id', 1);
+    setSavingUrl(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    await reloadSettings();
+    showToast(v ? 'Saved. The “Get new trainees” button is ready.' : 'Removed.');
+  };
   const [configured, setConfigured] = useState(null);
   const [runs, setRuns] = useState([]);
   const [secret, setSecret] = useState('');
@@ -71,6 +84,16 @@ export default function DossierConnection() {
           </ul>
         </details>
       )}
+
+      <div className="mt-5 rounded-xl border border-slate-200 p-3.5">
+        <label className="label" htmlFor="script-url">Google script web app URL (for the “Get new trainees” button)</label>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input id="script-url" className="input flex-1 font-mono text-xs" value={scriptUrl} onChange={(e) => setScriptUrl(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" />
+          <button className="btn-primary btn-sm" onClick={saveUrl} disabled={savingUrl}>Save</button>
+          <SyncNowButton onDone={load} className="btn-secondary btn-sm" />
+        </div>
+        <p className="mt-1.5 text-xs text-slate-500">In Apps Script: Deploy → New deployment → Web app → Execute as <b>Me</b>, Who has access <b>Anyone</b> → Deploy → copy the URL. After editing the script later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy.</p>
+      </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
         <a href="/dossier-sync.gs" download className="btn-secondary btn-sm"><Download size={14} />Download Google script</a>
