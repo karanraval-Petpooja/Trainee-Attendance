@@ -128,6 +128,7 @@ export default function AppShell({ children }) {
       setProfile(prof);
       await reloadSettings();
       try { await sb().rpc('process_missed_attendance'); } catch { /* non-blocking */ }
+      try { await sb().rpc('process_handover_reminders'); } catch { /* non-blocking */ }
       if (!alive) return;
       await reloadNotifications(prof.id);
       if (!alive) return;

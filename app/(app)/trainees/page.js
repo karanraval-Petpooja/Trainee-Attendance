@@ -616,16 +616,30 @@ export default function TraineesPage() {
         )} />
 
       <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Batches">
-        {[{ id: 'all', code: 'All trainees' }, ...batches.filter((b) => b.status === 'active' || b.id === batchFilter), { id: 'none', code: 'No batch' }].map((b) => {
-          const active = batchFilter === b.id;
-          const n = b.id === 'all' ? trainees.filter((t) => !t.deleted_at).length : b.id === 'none' ? trainees.filter((t) => !t.batch_id && !t.deleted_at).length : batchCount(b.id);
-          return (
-            <button key={b.id} role="tab" aria-selected={active} onClick={() => { setBatchFilter(b.id); clearSelection(); if (b.id !== 'all') setShow('all'); }}
+        {[{ id: 'all', code: 'All trainees' }, ...batches.filter((b) => b.status === 'active' || b.id === batchFilter), { id: 'none', code: 'No batch' }].flatMap((b) => {
+          const live = trainees.filter((t) => !t.deleted_at);
+          const n = b.id === 'all' ? live.length : b.id === 'none' ? live.filter((t) => !t.batch_id).length : batchCount(b.id);
+          const card = (key, title, sub, active, onClick) => (
+            <button key={key} role="tab" aria-selected={active} onClick={onClick}
               className={`shrink-0 rounded-2xl border px-4 py-2.5 text-left transition-colors ${active ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}>
-              <div className="text-sm font-bold">{b.code}</div>
-              <div className={`text-[11px] ${active ? 'text-ink-200' : 'text-slate-400'}`}>{n} trainee{n === 1 ? '' : 's'}{b.trainer_id ? ` · ${b.trainer_id === profile.id ? 'You' : trainerNames[b.trainer_id] || ''}` : ''}</div>
+              <div className="text-sm font-bold">{title}</div>
+              <div className={`text-[11px] ${active ? 'text-ink-200' : 'text-slate-400'}`}>{sub}</div>
             </button>
           );
+          const pick = (batchId, trainerId) => { setBatchFilter(batchId); setTrainerFilter(trainerId); clearSelection(); if (batchId !== 'all') setShow('all'); };
+          if (b.id === 'all' || b.id === 'none') {
+            return [card(b.id, b.code, `${n} trainee${n === 1 ? '' : 's'}`, batchFilter === b.id && trainerFilter === 'all', () => pick(b.id, 'all'))];
+          }
+          // Split each batch by its current trainer so every trainer's group can be checked separately
+          const byTrainer = {};
+          live.filter((t) => t.batch_id === b.id).forEach((t) => { const k = t.trainer_id || 'none'; byTrainer[k] = (byTrainer[k] || 0) + 1; });
+          const groups = Object.entries(byTrainer).sort((x, y) => y[1] - x[1]);
+          const nameOf = (id) => (id === 'none' ? 'No trainer' : id === profile.id ? 'You' : trainerNames[id] || '—');
+          const cards = [];
+          if (groups.length !== 1) cards.push(card(b.id, b.code, `${n} trainee${n === 1 ? '' : 's'} · all trainers`, batchFilter === b.id && trainerFilter === 'all', () => pick(b.id, 'all')));
+          groups.forEach(([tid, c]) => cards.push(card(`${b.id}-${tid}`, b.code, `${c} · ${nameOf(tid)}`,
+            batchFilter === b.id && (trainerFilter === tid || (groups.length === 1 && trainerFilter === 'all')), () => pick(b.id, groups.length === 1 ? 'all' : tid))));
+          return cards;
         })}
         {batches.some((b) => b.status === 'closed') && (
           <select className="input w-auto shrink-0" value="" onChange={(e) => { if (e.target.value) { setBatchFilter(e.target.value); setShow('all'); } }} aria-label="Closed batches">
@@ -709,6 +723,14 @@ export default function TraineesPage() {
                     <td className="text-slate-600">{fmtMedium(t.joining_date)}</td>
                     <td className="text-slate-600">
                       {t.tcd_lwd ? fmtMedium(t.tcd_lwd) : EXIT_LABELS[t.exit_reason || '']}
+                      {!t.tcd_lwd && !t.exit_reason && t.probable_handover_date && (() => {
+                        const left = Math.round((Date.parse(t.probable_handover_date) - Date.parse(now.date)) / 86400000);
+                        return (
+                          <div className={`text-xs font-semibold ${left < 0 ? 'text-red-600' : left <= 7 ? 'text-amber-700' : 'text-slate-400'}`}>
+                            Probable {fmtMedium(t.probable_handover_date)}{left < 0 ? ' · overdue' : left === 0 ? ' · today' : left <= 7 ? ` · in ${left} day${left === 1 ? '' : 's'}` : ''}
+                          </div>
+                        );
+                      })()}
                       {t.tcd_lwd && t.exit_reason && <div className="text-xs text-slate-400">{EXIT_LABELS[t.exit_reason]}</div>}
                       {periodsOf(t).length > 1 && <div className="text-xs font-semibold text-ink-600">{openPeriod(t) ? 'Back in training' : 'Trained'} · {periodsOf(t).length} periods</div>}
                     </td>

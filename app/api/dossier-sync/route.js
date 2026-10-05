@@ -70,6 +70,7 @@ export async function POST(req) {
     const res = await executeDossierSync(a, plan, { withAttendance: body.importAttendance !== false, overwrite: false });
     const errors = [...parsed.errors, ...res.errors, ...unmatched.map((n) => `Trainer "${n}" matches no single trainer login. Use the full name as on the Trainers page.`)];
 
+    await a.rpc('process_handover_reminders').then(() => {}, () => {}); // 7 days / 1 day before, overdue
     await a.from('sync_log').insert({
       run_id: String(body.runId || '').slice(0, 64) || null, source: 'dossier', rows_received: rows.length,
       added: res.added, updated: res.updated, attendance_days: res.days, errors: errors.length ? errors.slice(0, 20).join('\n') : null,
