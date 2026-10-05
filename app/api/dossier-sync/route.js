@@ -1,7 +1,8 @@
 // Receives Dossier rows from the Google Apps Script (integrations/dossier-sync.gs).
 // Protected by DOSSIER_SYNC_SECRET. Uses the shared rules in lib/dossierSync.js.
 import { admin, errorResponse, httpError } from '@/lib/supabaseAdmin';
-import { parseDossier } from '@/lib/parseDossier';
+import { isHeadedDossier, parseDossier, parseDossierByHeader } from '@/lib/parseDossier';
+import { nowInTz } from '@/lib/dates';
 import { executeDossierSync, makeTrainerResolver, planDossierSync } from '@/lib/dossierSync';
 
 export const dynamic = 'force-dynamic';
@@ -31,10 +32,19 @@ export async function POST(req) {
 
     const body = await req.json();
     if (!Array.isArray(body.rows)) throw httpError(400, 'Send { rows: [[…], …] }');
-    const text = body.rows
-      .map((r) => (Array.isArray(r) ? r : []).map((c) => String(c ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t'))
-      .join('\n');
-    const parsed = parseDossier(text, { colors: Array.isArray(body.colors) ? body.colors : [] });
+    const a0 = admin();
+    const { data: st } = await a0.from('settings').select('timezone').eq('id', 1).single();
+    const today = nowInTz(st?.timezone || 'Asia/Kolkata').date;
+    let parsed;
+    if (Array.isArray(body.header) && isHeadedDossier(body.header)) {
+      // Sheet with named columns (DOJ, Name, Trainer Name, Training Status …), no Day columns
+      parsed = parseDossierByHeader(body.header, body.rows, { today });
+    } else {
+      const text = body.rows
+        .map((r) => (Array.isArray(r) ? r : []).map((c) => String(c ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t'))
+        .join('\n');
+      parsed = parseDossier(text, { colors: Array.isArray(body.colors) ? body.colors : [] });
+    }
     const fromDoj = body.fromDoj && /^\d{4}-\d{2}-\d{2}$/.test(body.fromDoj) ? body.fromDoj : null;
     const rows = fromDoj ? parsed.rows.filter((r) => r.joining_date >= fromDoj) : parsed.rows;
     // Codes looked up by the script in the Contact Details sheet fill rows that have no E Code yet

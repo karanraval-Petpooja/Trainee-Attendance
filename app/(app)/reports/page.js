@@ -180,7 +180,8 @@ export default function MonthlySheetPage() {
       </div>
 
       <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">
-        {Object.entries(CELL_STYLE).filter(([code]) => code !== CELL.LEAVE).map(([code, st]) => (
+        <span className="inline-flex items-center gap-1.5"><span className="rounded border border-slate-200 bg-white px-3 py-0.5">&nbsp;</span>Present (also when not marked)</span>
+        {Object.entries(CELL_STYLE).filter(([code]) => ![CELL.LEAVE, CELL.P, CELL.NOT_FILLED].includes(code)).map(([code, st]) => (
           <span key={code} className="inline-flex items-center gap-1.5"><span className={`rounded px-1.5 py-0.5 font-semibold ${st.tw}`}>{code === CELL.HANDOVER ? 'Handover' : code}</span>{{
             P: 'Present', WO: 'Week off', PH: 'Holiday', Absent: 'Absent', 'Half day': 'Half day', Leave: 'Leave', 'Not Marked': 'Trainer did not mark', [CELL.HANDOVER]: 'Handover to Reporting Manager (day after TCD)',
           }[code]}</span>

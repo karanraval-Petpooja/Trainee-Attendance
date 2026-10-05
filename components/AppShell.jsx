@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, FileSpreadsheet, Flag, GraduationCap, History, LayoutDashboard,
+  BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
   LogOut, Menu, Settings, UserCircle, Users, X,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
@@ -31,6 +31,10 @@ const TRAINER_GROUPS = [
   { id: 'data', title: 'Data & Setup', items: [
     { href: '/trainees', label: 'My Trainees & Batches', icon: GraduationCap },
   ] },
+  { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
+    { href: '/ojt', label: 'Sessions', icon: ClipboardList },
+    { href: '/ojt/charts', label: 'Charts', icon: PieChart },
+  ] },
   { id: 'reports', title: 'Reports', items: REPORTS },
   { id: 'account', title: 'Account', items: [
     { href: '/notifications', label: 'Notifications', icon: Bell },
@@ -47,6 +51,10 @@ const MANAGER_GROUPS = [
     { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
     { href: '/trainers', label: 'Trainers', icon: Users },
     { href: '/settings', label: 'Settings', icon: Settings },
+  ] },
+  { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
+    { href: '/ojt', label: 'Sessions', icon: ClipboardList },
+    { href: '/ojt/charts', label: 'Charts', icon: PieChart },
   ] },
   { id: 'reports', title: 'Reports', items: REPORTS },
   { id: 'account', title: 'Account', items: [
@@ -178,8 +186,9 @@ export default function AppShell({ children }) {
   const groups = profile?.role === 'manager' ? MANAGER_GROUPS : TRAINER_GROUPS;
   const nav = groups.flatMap((g) => g.items);
   const isReport = REPORTS.some((r) => pathname.startsWith(r.href));
+  const activeHref = nav.map((n) => n.href).filter((h) => pathname === h || pathname.startsWith(`${h}/`)).sort((a, b) => b.length - a.length)[0];
   const unread = notifications.filter((n) => !n.read_status).length;
-  const title = nav.find((n) => pathname.startsWith(n.href))?.label || 'Trainer Attendance';
+  const title = nav.find((n) => n.href === activeHref)?.label || 'Trainer Attendance';
 
   const logout = async () => {
     await sb().auth.signOut();
@@ -213,7 +222,7 @@ export default function AppShell({ children }) {
           </div>
           <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
             {groups.map((g) => {
-              const hasActive = g.items.some((it) => pathname.startsWith(it.href));
+              const hasActive = g.items.some((it) => it.href === activeHref);
               const open = !g.title || (expanded[g.id] ?? hasActive);
               return (
                 <div key={g.id} className={g.title ? 'pt-3' : ''}>
@@ -225,7 +234,7 @@ export default function AppShell({ children }) {
                     </button>
                   )}
                   {open && g.items.map(({ href, label, icon: Icon }) => {
-                    const active = pathname.startsWith(href);
+                    const active = href === activeHref;
                     return (
                       <Link key={href} href={href}
                         className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${active ? 'bg-white/10 text-white' : 'text-ink-300 hover:bg-white/5 hover:text-white'}`}>
