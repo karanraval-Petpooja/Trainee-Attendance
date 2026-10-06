@@ -555,6 +555,7 @@ export default function TraineesPage() {
   const [q, setQ] = useState('');
   const [show, setShow] = useState('training');
   const [trainerFilter, setTrainerFilter] = useState('all');
+  const [dojFilter, setDojFilter] = useState('all');
   const [form, setForm] = useState(null);
   const [bulk, setBulk] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
@@ -564,8 +565,11 @@ export default function TraineesPage() {
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training' : t.joining_date > now.date ? 'upcoming' : 'done');
   const filtered = trainees.filter((t) => ((show === 'all' && !t.deleted_at) || stage(t) === show)
     && (trainerFilter === 'all' || t.trainer_id === trainerFilter)
+    && (dojFilter === 'all' || t.joining_date === dojFilter)
     && (batchFilter === 'all' || (batchFilter === 'none' ? !t.batch_id : t.batch_id === batchFilter))
-    && ([t.name, t.employee_code, t.reporting_manager, t.track, t.official_email, t.personal_email, t.phone].some((v) => v?.toLowerCase().includes(q.toLowerCase()))
+    && ([t.name, t.employee_code, t.reporting_manager, t.track, t.official_email, t.personal_email, t.phone,
+      t.joining_date, t.joining_date && fmtMedium(t.joining_date), t.joining_date && t.joining_date.split('-').reverse().join('-'),
+      t.joining_date && t.joining_date.split('-').reverse().join('/')].some((v) => v?.toLowerCase().includes(q.trim().toLowerCase()))
       // mobile: match digits only, so "98820 75833" or "9882075833" both work
       || (q.replace(/\D/g, '').length >= 3 && (t.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '')))));
   const counts = trainees.reduce((m, t) => ({ ...m, [stage(t)]: (m[stage(t)] || 0) + 1 }), {});
@@ -711,8 +715,14 @@ export default function TraineesPage() {
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-10" placeholder="Search name, E Code, mobile, email or reporting manager" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search trainees" />
+          <input className="input pl-10" placeholder="Search name, E Code, mobile, email, DOJ or reporting manager" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search trainees" />
         </div>
+        <select className="input sm:w-48" value={dojFilter} onChange={(e) => setDojFilter(e.target.value)} aria-label="DOJ">
+          <option value="all">All DOJs</option>
+          {Object.entries(trainees.filter((t) => !t.deleted_at && t.joining_date).reduce((m, t) => { m[t.joining_date] = (m[t.joining_date] || 0) + 1; return m; }, {}))
+            .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+            .map(([d, n]) => <option key={d} value={d}>DOJ {fmtMedium(d)} ({n})</option>)}
+        </select>
         {isManager && (
           <select className="input sm:w-52" value={trainerFilter} onChange={(e) => setTrainerFilter(e.target.value)} aria-label="Trainer">
             <option value="all">All trainers</option>
