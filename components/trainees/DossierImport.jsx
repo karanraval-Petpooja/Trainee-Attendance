@@ -12,7 +12,7 @@ import { ErrorText, Modal, Spinner } from '../ui';
 
 // Manager: import trainees (and their attendance) straight from the Dossier sheet
 export default function DossierImport({ trainers, trainees, onClose, onDone }) {
-  const { profile } = useApp();
+  const { profile, now } = useApp();
   const [text, setText] = useState('');
   const [defaultTrainer, setDefaultTrainer] = useState('');
   const [mapping, setMapping] = useState({});
@@ -23,7 +23,14 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
   const [error, setError] = useState('');
   const [colors, setColors] = useState([]);
   const [fileNote, setFileNote] = useState('');
-  const parsedAll = useMemo(() => parseDossier(text, { colors }), [text, colors]);
+  const parsedFile = useMemo(() => parseDossier(text, { colors }), [text, colors]);
+  // Only trainees still in training (default): no handover / exit yet, or a TCD that is still ahead
+  const [onlyTraining, setOnlyTraining] = useState(true);
+  const today = now?.date || new Date().toISOString().slice(0, 10);
+  const stillTraining = (r) => !r.exit_reason || (r.exit_reason === 'handover' && r.tcd_lwd && r.tcd_lwd >= today);
+  const parsedAll = useMemo(() => (onlyTraining ? { ...parsedFile, rows: parsedFile.rows.filter(stillTraining) } : parsedFile),
+    [parsedFile, onlyTraining, today]);
+  const leftOut = parsedFile.rows.length - parsedAll.rows.length;
   // DOJ filter: only trainees who joined on the picked dates are shown and imported (none picked = all)
   const [dojPick, setDojPick] = useState(() => new Set());
   const dojList = useMemo(() => {
@@ -98,6 +105,14 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
         {fileNote && <p className="mt-1 text-xs font-semibold text-emerald-700">{fileNote}</p>}
       </div>
       <textarea className="input mt-3 h-32 font-mono text-[11px]" value={text} onChange={(e) => { setText(e.target.value); setColors([]); setDojPick(new Set()); }} placeholder="Paste Dossier rows here" aria-label="Dossier rows" />
+
+      {parsedFile.rows.length > 0 && (
+        <label className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
+          <input type="checkbox" className="h-4 w-4 accent-ink-800" checked={onlyTraining} onChange={(e) => { setOnlyTraining(e.target.checked); setDojPick(new Set()); }} />
+          <span className="font-semibold text-slate-800">Only trainees still in training</span>
+          <span className="text-xs text-slate-500">{onlyTraining ? `${leftOut} handed over / exited row${leftOut === 1 ? '' : 's'} left out` : 'all rows, including handed over / exited'}</span>
+        </label>
+      )}
 
       {dojList.length > 1 && (
         <div className="mt-3 rounded-xl border border-slate-200 p-3">
