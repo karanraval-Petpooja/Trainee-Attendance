@@ -499,6 +499,44 @@ function MoveToBatch({ items, batches, trainees, trainerNames, onClose, onDone }
   );
 }
 
+// Permanent delete (manager): the trainee, attendance, trainer history and reminders are removed for good
+function PermanentDelete({ items, onClose, onDone }) {
+  const [working, setWorking] = useState(false);
+  const [sure, setSure] = useState(false);
+  const [error, setError] = useState('');
+  const run = async () => {
+    setWorking(true); setError('');
+    const ids = items.map((t) => t.id);
+    let done = 0;
+    for (let i = 0; i < ids.length; i += 100) {
+      const { data, error: err } = await sb().from('trainees').delete().in('id', ids.slice(i, i + 100)).select('id');
+      if (err) { setError(err.message); setWorking(false); return; }
+      done += (data || []).length;
+    }
+    setWorking(false);
+    if (!done) { setError('Nothing was deleted. Run cleanup_deleted_removed.sql once in Supabase to allow permanent delete.'); return; }
+    onDone(`${done} trainee${done === 1 ? '' : 's'} deleted permanently.`);
+    onClose();
+  };
+  return (
+    <Modal title={`Delete ${items.length} trainee${items.length === 1 ? '' : 's'} permanently?`} onClose={onClose}
+      footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-danger" onClick={run} disabled={working || !sure}>{working && <Spinner size={16} />}Delete permanently</button></>}>
+      <ul className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700">
+        {items.slice(0, 200).map((t) => <li key={t.id} className="py-0.5">{t.name}{t.employee_code ? <span className="text-slate-400"> · {t.employee_code}</span> : null}</li>)}
+        {items.length > 200 && <li className="py-0.5 text-slate-400">+ {items.length - 200} more</li>}
+      </ul>
+      <div className="mt-4 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-800">
+        <b>This cannot be undone.</b> Their attendance, trainer history and reminders are removed too, and they disappear from the Monthly Sheet, History and Analytics.
+      </div>
+      <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <input type="checkbox" className="h-4 w-4 accent-red-600" checked={sure} onChange={(e) => setSure(e.target.checked)} />
+        I understand, delete them permanently
+      </label>
+      <div className="mt-3"><ErrorText>{error}</ErrorText></div>
+    </Modal>
+  );
+}
+
 function BulkDelete({ items, onClose, onDone }) {
   const { profile } = useApp();
   const [working, setWorking] = useState(false);
@@ -555,6 +593,7 @@ export default function TraineesPage() {
   const [q, setQ] = useState('');
   const [show, setShow] = useState('training');
   const [trainerFilter, setTrainerFilter] = useState('all');
+  const [permanent, setPermanent] = useState(null);
   const [dojFilter, setDojFilter] = useState('all');
   const [form, setForm] = useState(null);
   const [bulk, setBulk] = useState(false);
@@ -751,7 +790,8 @@ export default function TraineesPage() {
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('active')}><UserCheck size={14} />Restore</button>
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'handover' })}><ArrowRightLeft size={14} />Handover</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'return' })}><RotateCcw size={14} />Bring back for training</button>}
-            {show !== 'deleted' && <button className="btn btn-sm bg-red-600 text-white hover:bg-red-700" onClick={() => setConfirmDelete(selectedRows)}><Trash2 size={14} />Delete</button>}
+            {show !== 'deleted' && show !== 'inactive' && <button className="btn btn-sm bg-red-600 text-white hover:bg-red-700" onClick={() => setConfirmDelete(selectedRows)}><Trash2 size={14} />Delete</button>}
+            {isManager && (show === 'deleted' || show === 'inactive') && <button className="btn btn-sm bg-red-700 text-white hover:bg-red-800" onClick={() => setPermanent(selectedRows)}><Trash2 size={14} />Delete permanently</button>}
           </div>
         </div>
       )}
@@ -837,6 +877,7 @@ export default function TraineesPage() {
         <BulkDelete items={confirmDelete} onClose={() => setConfirmDelete(null)}
           onDone={(msg) => { if (msg) showToast(msg); clearSelection(); reload(); }} />
       )}
+      {permanent && <PermanentDelete items={permanent} onClose={() => setPermanent(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {/* last, so it opens on top of the handover dialog */}
       {ragFor && <RagModal trainee={ragFor} onClose={() => setRagFor(null)} onSaved={(saved) => { ragFor._after?.(saved); reload(); }} />}
     </div>
