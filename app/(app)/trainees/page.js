@@ -208,6 +208,22 @@ function BatchPanel({ batch, members, trainerNames, isManager, onSwitchAll, onSe
   );
 }
 
+// Training periods of one trainee (e.g. trained → handed over → brought back)
+function PeriodList({ t }) {
+  const periods = periodsOf(t);
+  return (
+    <ol className="space-y-1.5 text-sm">
+      {periods.map((p, i) => (
+        <li key={i} className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-ink-50 px-2 py-0.5 text-xs font-semibold text-ink-700">Period {i + 1}</span>
+          <span className="text-slate-700">{fmtMedium(p.start)} → {p.end ? fmtMedium(p.end) : 'now'}</span>
+          {p.reason && <span className="text-xs text-slate-500">{EXIT_LABELS[p.reason]}{p.reason === 'handover' && p.end ? ` on ${fmtMedium(addDays(p.end, 1))}` : ''}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, trainees, trainerNames }) {
   const { profile } = useApp();
   const [f, setF] = useState(initial);
@@ -457,7 +473,7 @@ function BulkAdd({ trainers, isManager, onClose, onSaved, batches, trainees, tra
 }
 
 function MoveToBatch({ items, batches, trainees, trainerNames, onClose, onDone }) {
-  const [batchId, setBatchId] = useState(defaultBatch || '');
+  const [batchId, setBatchId] = useState('');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const run = async () => {
