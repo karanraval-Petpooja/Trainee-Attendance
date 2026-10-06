@@ -23,7 +23,18 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
   const [error, setError] = useState('');
   const [colors, setColors] = useState([]);
   const [fileNote, setFileNote] = useState('');
-  const parsed = useMemo(() => parseDossier(text, { colors }), [text, colors]);
+  const parsedAll = useMemo(() => parseDossier(text, { colors }), [text, colors]);
+  // DOJ filter: only trainees who joined on the picked dates are shown and imported (none picked = all)
+  const [dojPick, setDojPick] = useState(() => new Set());
+  const dojList = useMemo(() => {
+    const m = {};
+    parsedAll.rows.forEach((r) => { m[r.joining_date] = (m[r.joining_date] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [parsedAll.rows]);
+  const parsed = useMemo(() => (dojPick.size
+    ? { ...parsedAll, rows: parsedAll.rows.filter((r) => dojPick.has(r.joining_date)) }
+    : parsedAll), [parsedAll, dojPick]);
+  const toggleDoj = (d) => setDojPick((cur) => { const n = new Set(cur); if (n.has(d)) n.delete(d); else n.add(d); return n; });
   const onFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -33,6 +44,7 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
       const res = await readDossierXlsx(await f.arrayBuffer());
       setText(res.text);
       setColors(res.colors);
+      setDojPick(new Set());
       setFileNote(`Read sheet “${res.sheetName}” from ${f.name}, including row colours.`);
     } catch (err) {
       setFileNote('');
@@ -85,7 +97,28 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
         <input id="dossier-file" type="file" accept=".xlsx" onChange={onFile} className="mt-2 block text-xs" />
         {fileNote && <p className="mt-1 text-xs font-semibold text-emerald-700">{fileNote}</p>}
       </div>
-      <textarea className="input mt-3 h-32 font-mono text-[11px]" value={text} onChange={(e) => { setText(e.target.value); setColors([]); }} placeholder="Paste Dossier rows here" aria-label="Dossier rows" />
+      <textarea className="input mt-3 h-32 font-mono text-[11px]" value={text} onChange={(e) => { setText(e.target.value); setColors([]); setDojPick(new Set()); }} placeholder="Paste Dossier rows here" aria-label="Dossier rows" />
+
+      {dojList.length > 1 && (
+        <div className="mt-3 rounded-xl border border-slate-200 p-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <span className="text-sm font-bold text-ink-900">Filter by DOJ</span>
+            <span className="text-xs text-slate-500">{dojPick.size ? `${parsed.rows.length} of ${parsedAll.rows.length} trainees selected` : `All ${parsedAll.rows.length} trainees · pick dates to import only those`}</span>
+          </div>
+          <div className="mt-2 flex max-h-28 flex-wrap gap-1.5 overflow-y-auto">
+            <button type="button" onClick={() => setDojPick(new Set())}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${dojPick.size === 0 ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>All DOJs</button>
+            {dojList.map(([d, n]) => (
+              <button key={d} type="button" onClick={() => toggleDoj(d)} aria-pressed={dojPick.has(d)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${dojPick.has(d) ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
+                {fmtMedium(d)} <span className={dojPick.has(d) ? 'text-ink-200' : 'text-slate-400'}>({n})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {dojList.length > 0 && parsed.rows.length === 0 && <p className="mt-3 text-sm text-slate-500">No trainees for the picked DOJ.</p>}
 
       {parsed.rows.length > 0 && (
         <>
