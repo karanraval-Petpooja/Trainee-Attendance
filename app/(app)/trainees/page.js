@@ -635,32 +635,63 @@ export default function TraineesPage() {
           </>
         )} />
 
-      <div className="no-scrollbar -mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Batches">
-        {[{ id: 'all', code: 'All trainees' }, ...batches.filter((b) => b.status === 'active' || b.id === batchFilter), { id: 'none', code: 'No batch' }].flatMap((b) => {
+      <div className="flex flex-wrap items-start gap-2.5" role="tablist" aria-label="Batches">
+        {(() => {
           const live = trainees.filter((t) => !t.deleted_at);
-          const n = b.id === 'all' ? live.length : b.id === 'none' ? live.filter((t) => !t.batch_id).length : batchCount(b.id);
-          const card = (key, title, sub, active, onClick) => (
-            <button key={key} role="tab" aria-selected={active} onClick={onClick}
-              className={`shrink-0 rounded-2xl border px-4 py-2.5 text-left transition-colors ${active ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}>
-              <div className="text-sm font-bold">{title}</div>
-              <div className={`text-[11px] ${active ? 'text-ink-200' : 'text-slate-400'}`}>{sub}</div>
-            </button>
-          );
           const pick = (batchId, trainerId) => { setBatchFilter(batchId); setTrainerFilter(trainerId); clearSelection(); if (batchId !== 'all') setShow('all'); };
-          if (b.id === 'all' || b.id === 'none') {
-            return [card(b.id, b.code, `${n} trainee${n === 1 ? '' : 's'}`, batchFilter === b.id && trainerFilter === 'all', () => pick(b.id, 'all'))];
-          }
-          // Split each batch by its current trainer so every trainer's group can be checked separately
-          const byTrainer = {};
-          live.filter((t) => t.batch_id === b.id).forEach((t) => { const k = t.trainer_id || 'none'; byTrainer[k] = (byTrainer[k] || 0) + 1; });
-          const groups = Object.entries(byTrainer).sort((x, y) => y[1] - x[1]);
           const nameOf = (id) => (id === 'none' ? 'No trainer' : id === profile.id ? 'You' : trainerNames[id] || '—');
-          const cards = [];
-          if (groups.length !== 1) cards.push(card(b.id, b.code, `${n} trainee${n === 1 ? '' : 's'} · all trainers`, batchFilter === b.id && trainerFilter === 'all', () => pick(b.id, 'all')));
-          groups.forEach(([tid, c]) => cards.push(card(`${b.id}-${tid}`, b.code, `${c} · ${nameOf(tid)}`,
-            batchFilter === b.id && (trainerFilter === tid || (groups.length === 1 && trainerFilter === 'all')), () => pick(b.id, groups.length === 1 ? 'all' : tid))));
-          return cards;
-        })}
+          const simple = (id, title, n) => {
+            const active = batchFilter === id && trainerFilter === 'all';
+            return (
+              <button key={id} role="tab" aria-selected={active} onClick={() => pick(id, 'all')}
+                className={`min-w-[120px] rounded-2xl border px-4 py-3 text-left transition-colors ${active ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}>
+                <div className="text-sm font-bold">{title}</div>
+                <div className={`text-xs ${active ? 'text-ink-200' : 'text-slate-400'}`}>{n} trainee{n === 1 ? '' : 's'}</div>
+              </button>
+            );
+          };
+          const shown = batches.filter((b) => b.status === 'active' || b.id === batchFilter);
+          return [
+            simple('all', 'All trainees', live.length),
+            ...shown.map((b) => {
+              const members = live.filter((t) => t.batch_id === b.id);
+              const byTrainer = {};
+              members.forEach((t) => { const k = t.trainer_id || 'none'; byTrainer[k] = (byTrainer[k] || 0) + 1; });
+              const groups = Object.entries(byTrainer).sort((x, y) => y[1] - x[1]);
+              const batchActive = batchFilter === b.id && trainerFilter === 'all';
+              const inBatch = batchFilter === b.id;
+              return (
+                <div key={b.id} className={`min-w-[210px] overflow-hidden rounded-2xl border bg-white ${inBatch ? 'border-ink-800 ring-1 ring-ink-800' : 'border-slate-200'}`}>
+                  <button role="tab" aria-selected={batchActive} onClick={() => pick(b.id, 'all')}
+                    className={`flex w-full items-baseline justify-between gap-3 px-4 py-2.5 text-left ${batchActive ? 'bg-ink-800 text-white' : 'hover:bg-slate-50'}`}>
+                    <span>
+                      <span className="text-sm font-bold">{b.code}</span>
+                      {b.name && <span className={`ml-1.5 text-xs ${batchActive ? 'text-ink-200' : 'text-slate-400'}`}>{b.name}</span>}
+                    </span>
+                    <span className={`text-sm font-bold ${batchActive ? 'text-white' : 'text-slate-700'}`}>{members.length}</span>
+                  </button>
+                  {groups.length > 0 && (
+                    <ul className="border-t border-slate-100 py-1">
+                      {groups.map(([tid, c]) => {
+                        const active = batchFilter === b.id && trainerFilter === tid;
+                        return (
+                          <li key={tid}>
+                            <button onClick={() => pick(b.id, tid)} aria-pressed={active}
+                              className={`flex w-full items-center justify-between gap-3 px-4 py-1 text-left text-xs ${active ? 'bg-ink-50 font-bold text-ink-800' : 'text-slate-600 hover:bg-slate-50'}`}>
+                              <span className="truncate">{nameOf(tid)}</span>
+                              <span className="font-semibold">{c}</span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            }),
+            simple('none', 'No batch', live.filter((t) => !t.batch_id).length),
+          ];
+        })()}
         {batches.some((b) => b.status === 'closed') && (
           <select className="input w-auto shrink-0" value="" onChange={(e) => { if (e.target.value) { setBatchFilter(e.target.value); setShow('all'); } }} aria-label="Closed batches">
             <option value="">Closed batches…</option>
