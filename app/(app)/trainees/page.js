@@ -228,6 +228,7 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
     const row = {
       name: f.name.trim(), employee_code: clean(f.employee_code), department: clean(f.department),
       official_email: clean(f.official_email)?.toLowerCase() || null, personal_email: clean(f.personal_email)?.toLowerCase() || null,
+      phone: clean(f.phone),
       reporting_manager: clean(f.reporting_manager),
       batch_id: f.batch_id || null,
     };
@@ -256,6 +257,7 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
       <div className="grid gap-4 sm:grid-cols-2">
         <div><label className="label" htmlFor="t-name">E Name</label><input id="t-name" className="input" value={f.name} onChange={set('name')} /></div>
         <div><label className="label" htmlFor="t-code">E Code</label><input id="t-code" className="input" value={f.employee_code || ''} onChange={set('employee_code')} placeholder="5601" /></div>
+        <div><label className="label" htmlFor="t-phone">Mobile number</label><input id="t-phone" type="tel" className="input" value={f.phone || ''} onChange={set('phone')} placeholder="98765 43210" /></div>
         <div><label className="label" htmlFor="t-pmail">Personal email</label><input id="t-pmail" type="email" className="input" value={f.personal_email || ''} onChange={set('personal_email')} placeholder="name@gmail.com" /></div>
         <div><label className="label" htmlFor="t-omail">Official email</label><input id="t-omail" type="email" className="input" value={f.official_email || ''} onChange={set('official_email')} placeholder="name@petpooja.com" /><p className="mt-1 text-xs text-slate-400">Shown instead of the personal email once filled in.</p></div>
         <div>
@@ -547,7 +549,9 @@ export default function TraineesPage() {
   const filtered = trainees.filter((t) => ((show === 'all' && !t.deleted_at) || stage(t) === show)
     && (trainerFilter === 'all' || t.trainer_id === trainerFilter)
     && (batchFilter === 'all' || (batchFilter === 'none' ? !t.batch_id : t.batch_id === batchFilter))
-    && [t.name, t.employee_code, t.reporting_manager, t.track, t.official_email, t.personal_email].some((v) => v?.toLowerCase().includes(q.toLowerCase())));
+    && ([t.name, t.employee_code, t.reporting_manager, t.track, t.official_email, t.personal_email, t.phone].some((v) => v?.toLowerCase().includes(q.toLowerCase()))
+      // mobile: match digits only, so "98820 75833" or "9882075833" both work
+      || (q.replace(/\D/g, '').length >= 3 && (t.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, '')))));
   const counts = trainees.reduce((m, t) => ({ ...m, [stage(t)]: (m[stage(t)] || 0) + 1 }), {});
 
   const toggle = async (t) => {
@@ -600,7 +604,7 @@ export default function TraineesPage() {
     showToast(status === 'closed' ? `${batch.code} closed.` : `${batch.code} reopened.`);
     reload();
   };
-  const blank = { name: '', employee_code: '', official_email: '', personal_email: '', joining_date: now.date, tcd_lwd: '', exit_reason: '', reporting_manager: '', department: '', trainer_id: isManager ? '' : profile.id, batch_id: batchFilter !== 'all' && batchFilter !== 'none' ? batchFilter : '' };
+  const blank = { name: '', employee_code: '', official_email: '', personal_email: '', phone: '', joining_date: now.date, tcd_lwd: '', exit_reason: '', reporting_manager: '', department: '', trainer_id: isManager ? '' : profile.id, batch_id: batchFilter !== 'all' && batchFilter !== 'none' ? batchFilter : '' };
 
   return (
     <div className="space-y-5">
@@ -660,7 +664,7 @@ export default function TraineesPage() {
       <div className="flex flex-col gap-3 sm:flex-row">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-10" placeholder="Search name, E Code or reporting manager" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search trainees" />
+          <input className="input pl-10" placeholder="Search name, E Code, mobile, email or reporting manager" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search trainees" />
         </div>
         {isManager && (
           <select className="input sm:w-52" value={trainerFilter} onChange={(e) => setTrainerFilter(e.target.value)} aria-label="Trainer">
@@ -703,7 +707,7 @@ export default function TraineesPage() {
             <table className="tbl">
               <thead><tr>
                 <th className="w-10"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={allVisibleSelected} onChange={toggleAll} aria-label="Select all shown trainees" /></th>
-                <th>E Code</th><th>E Name</th><th>Email</th><th>Batch</th><th>DOJ</th><th>TCD / LWD</th><th>Reporting manager</th><th>Trainer now</th><th>RAG</th><th className="text-right">Actions</th>
+                <th>E Code</th><th>E Name</th><th>Contact</th><th>Batch</th><th>DOJ</th><th>TCD / LWD</th><th>Reporting manager</th><th>Trainer now</th><th>RAG</th><th className="text-right">Actions</th>
               </tr></thead>
               <tbody>
                 {filtered.map((t) => (
@@ -718,6 +722,7 @@ export default function TraineesPage() {
                       {t.official_email ? <span className="text-slate-700">{t.official_email}</span>
                         : t.personal_email ? <span className="text-slate-500">{t.personal_email}<span className="ml-1 rounded bg-amber-50 px-1 text-[10px] font-semibold text-amber-700">personal</span></span>
                         : <span className="text-slate-300">—</span>}
+                      {t.phone && <div className="mt-0.5 font-medium text-slate-600">📞 {t.phone}</div>}
                     </td>
                     <td>{t._batch ? <span className="rounded-md bg-ink-50 px-2 py-0.5 text-xs font-bold text-ink-700">{t._batch.code}</span> : <span className="text-slate-300">—</span>}</td>
                     <td className="text-slate-600">{fmtMedium(t.joining_date)}</td>
