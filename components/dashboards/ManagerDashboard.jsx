@@ -114,11 +114,12 @@ export default function ManagerDashboard() {
           {alerts.length === 0 ? <Empty title="No alerts yet" /> : (
             <div className="table-wrap">
               <table className="tbl">
-                <thead><tr><th>Trainer</th><th>Date</th><th>Unmarked</th><th>Status</th><th>Detected</th><th>Count</th></tr></thead>
+                <thead><tr><th>Trainer</th><th>Batch</th><th>Date</th><th>Unmarked</th><th>Status</th><th>Detected</th><th>Count</th></tr></thead>
                 <tbody>
                   {alerts.slice(0, 12).map((a) => (
                     <tr key={a.id}>
                       <td className="font-semibold text-slate-800">{nameOf(a.trainer_id)}</td>
+                      <td>{a.batch?.code ? <span className="rounded-md bg-ink-50 px-2 py-0.5 text-xs font-bold text-ink-800">{a.batch.code}</span> : <span className="text-xs text-slate-400">No batch</span>}</td>
                       <td>{fmtMedium(a.attendance_date)}</td>
                       <td>{a.unmarked_count}</td>
                       <td>{a.resolved ? <span className="text-xs font-semibold text-orange-600">Filled late</span> : <span className="text-xs font-semibold text-red-600">Not marked</span>}</td>

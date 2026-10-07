@@ -48,7 +48,13 @@ export default function TrainerDashboard() {
         <StatCard label="Marked today" value={todayInfo.status === 'week_off' ? '—' : `${todayInfo.total - (todayInfo.unmarked || 0)}/${todayInfo.total}`} tone={todayInfo.unmarked ? 'orange' : 'green'} hint={todayInfo.status === 'week_off' ? 'Week off' : undefined} />
         <StatCard label="Present today" value={todayInfo.counts?.present ?? 0} tone="green" hint={todayInfo.counts?.absent ? `${todayInfo.counts.absent} absent` : undefined} />
         <StatCard label="Batch attendance" value={month.pct === null ? '—' : `${month.pct}%`} hint="this month" />
-        <StatCard label="Missed marking days" value={alerts.length} tone={alerts.length >= settings.escalation_threshold ? 'red' : 'slate'} hint={`Manager alerted at ${settings.escalation_threshold}`} />
+        {(() => {
+          const perBatch = alerts.reduce((m, a) => { const k = a.batch?.code || 'No batch'; m[k] = (m[k] || 0) + 1; return m; }, {});
+          const worst = Math.max(0, ...Object.values(perBatch));
+          const detail = Object.entries(perBatch).map(([k, v]) => `${k}: ${v}`).join(' · ');
+          return <StatCard label="Missed marking days" value={alerts.length} tone={worst >= settings.escalation_threshold ? 'red' : 'slate'}
+            hint={`${detail ? `${detail} · ` : ''}manager alerted at ${settings.escalation_threshold} per batch`} />;
+        })()}
       </div>
 
       {open.length > 0 && (
@@ -58,7 +64,7 @@ export default function TrainerDashboard() {
             {open.slice(0, 6).map((a) => (
               <li key={a.id} className="flex items-center gap-3 border-b border-slate-50 px-5 py-3 last:border-0">
                 <span aria-hidden="true">⚠️</span>
-                <div className="flex-1 text-sm"><span className="font-semibold text-slate-800">{fmtLong(a.attendance_date)}</span><span className="text-slate-500"> · {a.unmarked_count} trainee(s) not marked</span></div>
+                <div className="flex-1 text-sm"><span className="font-semibold text-slate-800">{fmtLong(a.attendance_date)}</span><span className="text-slate-500"> · {a.batch?.code ? `${a.batch.code} · ` : ''}{a.unmarked_count} trainee(s) not marked</span></div>
                 <button className="btn-danger btn-sm" onClick={() => setOpenDate(a.attendance_date)}>Mark now</button>
               </li>
             ))}
