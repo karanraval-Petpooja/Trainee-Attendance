@@ -33,7 +33,7 @@ export async function POST(req) {
     const body = await req.json();
     if (!Array.isArray(body.rows)) throw httpError(400, 'Send { rows: [[…], …] }');
     const a0 = admin();
-    const { data: st } = await a0.from('settings').select('timezone').eq('id', 1).single();
+    const { data: st } = await a0.from('settings').select('*').eq('id', 1).single();
     const today = nowInTz(st?.timezone || 'Asia/Kolkata').date;
     let parsed;
     if (Array.isArray(body.header) && isHeadedDossier(body.header)) {
@@ -45,8 +45,11 @@ export async function POST(req) {
         .join('\n');
       parsed = parseDossier(text, { colors: Array.isArray(body.colors) ? body.colors : [] });
     }
-    const fromDoj = body.fromDoj && /^\d{4}-\d{2}-\d{2}$/.test(body.fromDoj) ? body.fromDoj : null;
-    const rows = fromDoj ? parsed.rows.filter((r) => r.joining_date >= fromDoj) : parsed.rows;
+    const okDate = (d) => (d && /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? String(d).slice(0, 10) : null);
+    // Cut-off: the later of the script's FROM_DOJ and the app setting (Settings → Dossier connection)
+    const fromDoj = [okDate(body.fromDoj), okDate(st?.dossier_from_date)].filter(Boolean).sort().pop() || null;
+    const startOf = (r) => (r.trainingStart && r.trainingStart > r.joining_date ? r.trainingStart : r.joining_date);
+    const rows = fromDoj ? parsed.rows.filter((r) => startOf(r) >= fromDoj) : parsed.rows;
     // Codes looked up by the script in the Contact Details sheet fill rows that have no E Code yet
     const codes = body.codesByEmail && typeof body.codesByEmail === 'object' ? body.codesByEmail : {};
     rows.forEach((r) => {

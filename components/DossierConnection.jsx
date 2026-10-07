@@ -21,6 +21,13 @@ export default function DossierConnection() {
     await reloadSettings();
     showToast(v ? 'Saved. The “Get new trainees” button is ready.' : 'Removed.');
   };
+  const [fromDate, setFromDate] = useState(settings?.dossier_from_date || '');
+  const saveFromDate = async () => {
+    const { error } = await sb().from('settings').update({ dossier_from_date: fromDate || null }).eq('id', 1);
+    if (error) { showToast(error.message, 'error'); return; }
+    await reloadSettings();
+    showToast(fromDate ? 'Saved. Older trainees are skipped by the sync and the Excel import.' : 'Removed. All rows are read again.');
+  };
   const [configured, setConfigured] = useState(null);
   const [runs, setRuns] = useState([]);
   const [secret, setSecret] = useState('');
@@ -55,6 +62,15 @@ export default function DossierConnection() {
           <p className="mt-1 text-sm text-slate-500">Copies new trainees, RAG and attendance from the Dossier automatically. With edit access (WRITE_BACK in the script), attendance, RAG and remarks marked here are written back into the Dossier.</p>
         </div>
         <button className="btn-ghost btn-sm" onClick={load} aria-label="Refresh"><RefreshCw size={14} /></button>
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-200 p-3.5">
+        <label className="text-xs font-semibold text-slate-500" htmlFor="dossier-from">Only read trainees whose training started on or after</label>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <input id="dossier-from" type="date" className="input w-auto" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+          <button className="btn-secondary btn-sm" onClick={saveFromDate}>Save</button>
+          <span className="text-xs text-slate-500">{settings?.dossier_from_date ? 'Older rows in the sheet are ignored.' : 'Empty = every row in the sheet is read.'}</span>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">

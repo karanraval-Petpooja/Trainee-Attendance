@@ -2,7 +2,7 @@
 import { useMemo, useState } from 'react';
 import { sb } from '@/lib/supabase';
 import { fmtMedium } from '@/lib/dates';
-import { parseDossier } from '@/lib/parseDossier';
+import { parseDossier, parseDossierByHeader, isHeadedDossier } from '@/lib/parseDossier';
 import { executeDossierSync, makeMatcher, matchTrainerName, planDossierSync } from '@/lib/dossierSync';
 import { readDossierXlsx } from '@/lib/readDossierXlsx';
 import { EXIT_LABELS, RAG } from '@/lib/status';
@@ -12,7 +12,8 @@ import { ErrorText, Modal, Spinner } from '../ui';
 
 // Manager: import trainees (and their attendance) straight from the Dossier sheet
 export default function DossierImport({ trainers, trainees, onClose, onDone }) {
-  const { profile, now } = useApp();
+  const { profile, now, settings } = useApp();
+  const cutoff = settings?.dossier_from_date || null;
   const [text, setText] = useState('');
   const [defaultTrainer, setDefaultTrainer] = useState('');
   const [mapping, setMapping] = useState({});
@@ -23,7 +24,19 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
   const [error, setError] = useState('');
   const [colors, setColors] = useState([]);
   const [fileNote, setFileNote] = useState('');
-  const parsedFile = useMemo(() => parseDossier(text, { colors }), [text, colors]);
+  const parsedFile = useMemo(() => {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    const head = (lines[0] || '').split('\t');
+    let res;
+    if (isHeadedDossier(head)) {
+      res = parseDossierByHeader(head, lines.slice(1).map((l) => l.split('\t')), { today: now?.date });
+      res = { ...res, rows: res.rows.map((r, i) => ({ line: i + 2, attendance: [], warnings: [], ...r })) };
+    } else res = parseDossier(text, { colors });
+    if (!cutoff) return { ...res, beforeCutoff: 0 };
+    const startOf = (r) => (r.trainingStart && r.trainingStart > r.joining_date ? r.trainingStart : r.joining_date);
+    const kept = res.rows.filter((r) => startOf(r) >= cutoff);
+    return { ...res, rows: kept, beforeCutoff: res.rows.length - kept.length };
+  }, [text, colors, now?.date, cutoff]);
   // Only trainees still in training (default): no handover / exit yet, or a TCD that is still ahead
   const [onlyTraining, setOnlyTraining] = useState(true);
   const today = now?.date || new Date().toISOString().slice(0, 10);
@@ -52,7 +65,9 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
       setText(res.text);
       setColors(res.colors);
       setDojPick(new Set());
-      setFileNote(`Read sheet “${res.sheetName}” from ${f.name}, including row colours.`);
+      setFileNote(res.headed
+        ? `Read sheet “${res.sheetName}” from ${f.name} by its headings. Status comes from the Training Status column.`
+        : `Read sheet “${res.sheetName}” from ${f.name}, including row colours.`);
     } catch (err) {
       setFileNote('');
       setError(err.message);
@@ -105,6 +120,10 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
         {fileNote && <p className="mt-1 text-xs font-semibold text-emerald-700">{fileNote}</p>}
       </div>
       <textarea className="input mt-3 h-32 font-mono text-[11px]" value={text} onChange={(e) => { setText(e.target.value); setColors([]); setDojPick(new Set()); }} placeholder="Paste Dossier rows here" aria-label="Dossier rows" />
+
+      {parsedFile.beforeCutoff > 0 && (
+        <p className="mt-3 text-xs text-slate-500">{parsedFile.beforeCutoff} row{parsedFile.beforeCutoff === 1 ? '' : 's'} from before {fmtMedium(cutoff)} skipped (Settings → Dossier connection).</p>
+      )}
 
       {parsedFile.rows.length > 0 && (
         <label className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
