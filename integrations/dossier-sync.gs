@@ -147,7 +147,7 @@ function syncContacts() {
     for (var h = 0; h < top.length && !first; h++) {
       const cells = top[h].map(function (x) { return String(x).trim().toLowerCase(); });
       const hasName = cells.some(function (x) { return /name/.test(x); });
-      const hasDept = cells.some(function (x) { return /^(department|dept|team|function|sub department|department name)$/.test(x); });
+      const hasDept = cells.some(function (x) { return /depart|\bdept\b|^team( name)?$|^function$/.test(x.replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim()); });
       if (hasName && hasDept) first = h + 2;
     }
     if (!first) throw new Error('Contact Details: no heading row with "Name" and "Department" in the first 10 rows of "' + c.TAB_NAME + '".');

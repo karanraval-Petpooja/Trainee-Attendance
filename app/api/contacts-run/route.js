@@ -25,6 +25,10 @@ export async function POST(req) {
     let body = null;
     try { body = JSON.parse(text); } catch { throw httpError(502, 'The Google script did not answer with JSON. Deploy it again as a Web app (access: Anyone).'); }
     if (!body.ok) throw httpError(502, body.error || 'The Google script reported an error.');
+    if (typeof body.rows !== 'number' || typeof body.added !== 'number') {
+      throw httpError(502, 'The Google script answered, but with the Dossier sync, not Contact Details. It is still the OLD version: in Apps Script paste the new code, then Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.');
+    }
+    if (body.rows === 0) throw httpError(502, 'The Contact Details tab was read, but no people were found under the headings. Check TAB_NAME in the script and that the tab has a Name and a Department column.');
     return Response.json(body);
   } catch (e) {
     return errorResponse(e);

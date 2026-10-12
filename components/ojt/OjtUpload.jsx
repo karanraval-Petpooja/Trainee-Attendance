@@ -36,10 +36,18 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   const [contacts, setContacts] = useState([]);
   const [depts, setDepts] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [contactsError, setContactsError] = useState('');
   const loadContacts = async () => {
     const all = [];
+    setContactsError('');
     for (let from = 0; ; from += 1000) {
-      const { data } = await sb().from('contacts').select('name, official_email, personal_email, employee_code, department, active').eq('active', true).range(from, from + 999);
+      const { data, error } = await sb().from('contacts').select('name, official_email, personal_email, employee_code, department, active').eq('active', true).range(from, from + 999);
+      if (error) {
+        setContactsError(/contacts|relation|schema cache|does not exist/i.test(error.message)
+          ? 'The Contact Details table is not in the database yet: run update_contacts.sql in Supabase → SQL Editor.'
+          : error.message);
+        break;
+      }
       all.push(...(data || []));
       if (!data || data.length < 1000) break;
     }
@@ -183,9 +191,15 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
               {refreshing ? <Spinner size={14} /> : <RefreshCw size={14} />}{refreshing ? 'Updating…' : 'Refresh contacts'}
             </button>
           </div>
-          {deptList.length === 0 ? (
+          {contactsError && <p className="mt-1.5 text-xs font-semibold text-red-700">{contactsError}</p>}
+          {!contactsError && contacts.length > 0 && deptList.length === 0 && (
+            <p className="mt-1.5 text-xs font-semibold text-amber-700">{contacts.length} people loaded, but none has a Department. The Department column of the Contact Details tab was not recognised.</p>
+          )}
+          {!contactsError && contacts.length === 0 && (
             <p className="mt-1.5 text-xs text-slate-500">No Contact Details yet. Click “Refresh contacts” to load them from the Contact Details sheet.</p>
-          ) : (
+          )}
+          {deptList.length > 0 && <p className="mt-1 text-[11px] text-slate-500">{contacts.length} people in {deptList.length} departments loaded.</p>}
+          {deptList.length === 0 ? null : (
             <>
               <select id="ojt-dept" className="input" value="" onChange={(e) => { const d = e.target.value; if (d && !depts.includes(d)) setDepts([...depts, d]); }}>
                 <option value="">{depts.length ? 'Add another department…' : 'Pick the department this session was for…'}</option>
