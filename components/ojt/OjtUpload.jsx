@@ -50,9 +50,8 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   const refreshContacts = async () => {
     setRefreshing(true);
     try {
-      const r = await authFetch('/api/contacts-run', { method: 'POST' });
-      const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'Could not refresh Contact Details');
+      const j = await authFetch('/api/contacts-run', { method: 'POST' }); // already the JSON answer; throws on errors
+      if (!j.ok && !j.running) throw new Error(j.error || 'Could not refresh Contact Details');
       await loadContacts();
       showToast(j.running ? j.message : `Contact Details updated: ${j.rows} people (${j.added} new, ${j.updated} updated${j.deactivated ? `, ${j.deactivated} removed` : ''}).`);
     } catch (e) { showToast(e.message, 'error'); }

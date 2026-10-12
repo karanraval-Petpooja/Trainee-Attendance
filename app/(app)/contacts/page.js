@@ -101,9 +101,8 @@ export default function ContactsPage() {
   const refresh = async () => {
     setRefreshing(true);
     try {
-      const r = await authFetch('/api/contacts-run', { method: 'POST' });
-      const j = await r.json();
-      if (!r.ok || !j.ok) throw new Error(j.error || 'Could not refresh');
+      const j = await authFetch('/api/contacts-run', { method: 'POST' }); // already the JSON answer; throws on errors
+      if (!j.ok && !j.running) throw new Error(j.error || 'Could not refresh');
       showToast(j.running ? j.message : `Contact Details: ${j.rows} rows, ${j.added} added, ${j.updated} updated${j.deactivated ? `, ${j.deactivated} no longer in the sheet` : ''}.`);
       await reload();
     } catch (e) { showToast(e.message, 'error'); }
