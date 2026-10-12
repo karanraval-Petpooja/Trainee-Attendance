@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, Settings, UserCircle, Users, X,
+  LogOut, Menu, Settings, UserCircle, Users, X, Contact,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -50,6 +50,7 @@ const MANAGER_GROUPS = [
   { id: 'data', title: 'Data & Setup', items: [
     { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
     { href: '/trainers', label: 'Trainers', icon: Users },
+    { href: '/contacts', label: 'Contact Details', icon: Contact },
     { href: '/settings', label: 'Settings', icon: Settings },
   ] },
   { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
@@ -62,7 +63,7 @@ const MANAGER_GROUPS = [
     { href: '/profile', label: 'Profile', icon: UserCircle },
   ] },
 ];
-const MANAGER_ONLY = ['/trainers', '/settings'];
+const MANAGER_ONLY = ['/trainers', '/settings', '/contacts'];
 
 export default function AppShell({ children }) {
   const router = useRouter();

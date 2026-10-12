@@ -17,6 +17,12 @@
  *  3. Choose "syncDossier" in the function list at the top → Run. Allow access when Google asks.
  *     Check the result under "Execution log".
  *  4. Choose "createTrigger" → Run. From now on it syncs automatically.
+ *  5. Optional, for the app's "Get new trainees" button: Deploy → New deployment → type "Web app" →
+ *     Execute as: Me, Who has access: Anyone → Deploy. Copy the Web app URL (ends with /exec) and paste it
+ *     in the app: Settings → Dossier connection → Google script web app URL → Save.
+ *     After changing this code later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy.
+ *  6. Contact Details: choose "syncContacts" → Run once (allow access). createTrigger then refreshes it
+ *     every CONTACTS.REFRESH_EVERY_HOURS hours; the app's Contact Details page also has a Refresh button.
  *  To stop the automatic sync: choose "removeTrigger" → Run.
  */
 const CONFIG = {
@@ -32,31 +38,49 @@ const CONFIG = {
   DEFAULT_TRAINER_EMAIL: '',                        // optional: trainer for rows without a trainer name
   IMPORT_ATTENDANCE: true,                          // also copy P / AB / HD / Holiday (never overwrites app entries)
   SYNC_EVERY_HOURS: 1,                              // 1, 2, 4, 6, 8 or 12
-  WRITE_BACK: false,                                // true = write RAG / RAG Remarks from the app into the sheet
+  WRITE_BACK: true,                                 // true = write RAG / RAG Remarks from the app into the sheet
   WRITE_ATTENDANCE: false,                          // false = never write attendance (Day columns) into the sheet
   WRITE_BACK_DAYS: 90,                              // how far back to write attendance marked in the app
   WRITE_BACK_FROM: '2026-10-05',                    // only trainees whose training starts on/after this date are written
                                                     // (existing rows in the Dossier are never changed)
   HEADER_ROW: 1,                                    // row with the headings (Name, DOJ, Day 1, RAG …)
 
-  // OPTIONAL: fill missing E Codes from the Contact Details sheet.
-  // Works if YOUR Google account can view that sheet. Leave SHEET_ID empty to switch off.
+  // Contact Details sheet → app (employee list with departments, used for "Not attended" in sessions)
+  // and for filling missing E Codes. YOUR Google account needs view access. Empty SHEET_ID = off.
   CONTACTS: {
-    SHEET_ID: '',                                   // long code from the Contact Details sheet URL
-    TAB_NAME: '',                                   // tab name, e.g. 'Contact Details'
-    FIRST_DATA_ROW: 2,                              // first row below the headings
-    EMAIL_COLUMN: '',                               // column letter with the official email, e.g. 'D'
-    CODE_COLUMN: '',                                // column letter with the E Code, e.g. 'A'
+    SHEET_ID: '1FDODawNLYPxIp9PdJm8NDHFrEBbOKGZcOwS7WkDZOt4', // Contact Details sheet
+    TAB_NAME: 'Contact Details_Petpooja',           // tab with the employee list
+    FIRST_DATA_ROW: 0,                              // 0 = find the heading row automatically (Name + Department)
+    REFRESH_EVERY_HOURS: 6,                         // automatic refresh; also on demand: app → Contact Details → Refresh
+    EMAIL_COLUMN: '',                               // optional (old method): column letter with the official email
+    CODE_COLUMN: '',                                // optional (old method): column letter with the E Code
   },
   ROWS_PER_REQUEST: 60,
 };
 
 function syncDossier() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return { ok: true, busy: true, message: 'A sync is already running. Try again in a minute.' };
+  try { return runSync_(); } finally { lock.releaseLock(); }
+}
+
+// "Get new trainees" button in the app calls this web app address (with the sync secret)
+function doGet(e) {
+  var out;
+  if (!e || !e.parameter || e.parameter.key !== CONFIG.SYNC_SECRET) out = { ok: false, error: 'Wrong key' };
+  else {
+    try { out = e.parameter.action === 'contacts' ? syncContacts() : syncDossier(); } catch (err) { out = { ok: false, error: String(err && err.message || err) }; }
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+function doPost(e) { return doGet(e); }
+
+function runSync_() {
   const ss = SpreadsheetApp.openById(CONFIG.SHEET_ID);
   const sheet = ss.getSheetByName(CONFIG.TAB_NAME);
   if (!sheet) throw new Error('Tab "' + CONFIG.TAB_NAME + '" not found. Tabs: ' + ss.getSheets().map(function (s) { return s.getName(); }).join(', '));
   const lastRow = sheet.getLastRow();
-  if (lastRow < CONFIG.FIRST_DATA_ROW) { Logger.log('No rows to sync.'); return; }
+  if (lastRow < CONFIG.FIRST_DATA_ROW) { Logger.log('No rows to sync.'); return { ok: true, rows: 0, added: 0, updated: 0, attendanceDays: 0, errors: [] }; }
   const n = lastRow - CONFIG.FIRST_DATA_ROW + 1;
   const header = sheet.getRange(CONFIG.HEADER_ROW || 1, 1, 1, sheet.getLastColumn()).getDisplayValues()[0];
   const heads = header.map(function (h) { return String(h).trim().toLowerCase(); });
@@ -98,15 +122,61 @@ function syncDossier() {
     total.rows += body.rows; total.added += body.added; total.updated += body.updated;
     total.attendanceDays += body.attendanceDays; total.errors = total.errors.concat(body.errors || []);
   }
-  if (CONFIG.WRITE_BACK) writeBackToDossier();
+  const written = CONFIG.WRITE_BACK ? writeBackToDossier() : null;
   Logger.log('Synced ' + total.rows + ' rows: ' + total.added + ' added, ' + total.updated + ' updated, ' +
              total.attendanceDays + ' attendance days.' + (total.errors.length ? '\nProblems:\n' + total.errors.join('\n') : ''));
+  return { ok: true, rows: total.rows, added: total.added, updated: total.updated, attendanceDays: total.attendanceDays,
+           errors: total.errors.slice(0, 10), written: written };
 }
 
 // Official email → E Code, from the Contact Details sheet (optional)
+// ---------------------------------------------------------------------------
+// Contact Details → app (employee list with departments, used for "Not attended" in sessions).
+// Uses CONTACTS.SHEET_ID and CONTACTS.TAB_NAME; headings must include Name and Department.
+// ---------------------------------------------------------------------------
+function syncContacts() {
+  const c = CONFIG.CONTACTS;
+  if (!c || !c.SHEET_ID) throw new Error('Fill CONTACTS.SHEET_ID and CONTACTS.TAB_NAME in CONFIG first.');
+  const sheet = SpreadsheetApp.openById(c.SHEET_ID).getSheetByName(c.TAB_NAME);
+  if (!sheet) throw new Error('Contact Details tab "' + c.TAB_NAME + '" not found');
+  const last = sheet.getLastRow();
+  const width = sheet.getLastColumn();
+  var first = c.FIRST_DATA_ROW || 0;
+  if (!first) { // heading row = first row (within the top 10) that has a Name and a Department-type heading
+    const top = sheet.getRange(1, 1, Math.min(10, last), width).getDisplayValues();
+    for (var h = 0; h < top.length && !first; h++) {
+      const cells = top[h].map(function (x) { return String(x).trim().toLowerCase(); });
+      const hasName = cells.some(function (x) { return /name/.test(x); });
+      const hasDept = cells.some(function (x) { return /^(department|dept|team|function|sub department|department name)$/.test(x); });
+      if (hasName && hasDept) first = h + 2;
+    }
+    if (!first) throw new Error('Contact Details: no heading row with "Name" and "Department" in the first 10 rows of "' + c.TAB_NAME + '".');
+  }
+  const header = sheet.getRange(first - 1, 1, 1, width).getDisplayValues()[0];
+  const values = last >= first ? sheet.getRange(first, 1, last - first + 1, width).getDisplayValues() : [];
+  const rows = values.filter(function (r) { return r.join('').trim(); });
+  const runId = Utilities.getUuid();
+  const total = { ok: true, rows: 0, added: 0, updated: 0, deactivated: 0 };
+  const step = 500;
+  for (var i = 0; i < rows.length || i === 0; i += step) {
+    const chunk = rows.slice(i, i + step);
+    const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/contacts-sync', {
+      method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+      headers: { 'x-sync-secret': CONFIG.SYNC_SECRET },
+      payload: JSON.stringify({ header: header, rows: chunk, runId: runId, final: i + step >= rows.length }),
+    });
+    const body = JSON.parse(res.getContentText() || '{}');
+    if (!body.ok) throw new Error('Contacts: ' + (body.error || res.getResponseCode()));
+    total.rows += body.rows; total.added += body.added; total.updated += body.updated; total.deactivated += body.deactivated || 0;
+    if (!rows.length) break;
+  }
+  Logger.log('Contacts: ' + total.rows + ' rows, ' + total.added + ' added, ' + total.updated + ' updated, ' + total.deactivated + ' no longer in the sheet.');
+  return total;
+}
+
 function readContactCodes() {
   const c = CONFIG.CONTACTS;
-  if (!c || !c.SHEET_ID) return {};
+  if (!c || !c.SHEET_ID || !c.EMAIL_COLUMN || !c.CODE_COLUMN) return {};
   const sheet = SpreadsheetApp.openById(c.SHEET_ID).getSheetByName(c.TAB_NAME);
   if (!sheet) throw new Error('Contact Details tab "' + c.TAB_NAME + '" not found');
   const last = sheet.getLastRow();
@@ -151,7 +221,7 @@ function writeBackToDossier() {
 
   const first = CONFIG.FIRST_DATA_ROW;
   const n = sheet.getLastRow() - first + 1;
-  if (n < 1) return;
+  if (n < 1) return { cells: 0, rags: 0 };
   const shown = sheet.getRange(first, 1, n, lastCol).getDisplayValues();
   const days = nDays ? sheet.getRange(first, cDay1 + 1, n, nDays).getDisplayValues() : shown.map(function () { return []; }); // read only
 
@@ -209,6 +279,7 @@ function writeBackToDossier() {
              (missing ? ' ' + missing + ' trainee(s) from the app were not found in the Dossier.' : '') +
              (skippedOld ? ' Trainees who started before ' + from + ' were left unchanged (' + skippedOld + ').' : '') +
              (blocked.length ? '\nLocked cells skipped (' + blocked.length + '): ' + blocked.slice(0, 15).join(', ') : ''));
+  return { cells: cells, rags: rags, blocked: blocked.length };
 }
 
 // "06-Jul-26", "06-Jul-2026", "2026-07-06" or "06/07/2026" → "2026-07-06"
@@ -238,11 +309,12 @@ function dayNumber(startIso, dateIso) {
 function createTrigger() {
   removeTrigger();
   ScriptApp.newTrigger('syncDossier').timeBased().everyHours(CONFIG.SYNC_EVERY_HOURS).create();
-  Logger.log('Automatic sync is on: every ' + CONFIG.SYNC_EVERY_HOURS + ' hour(s).');
+  if (CONFIG.CONTACTS && CONFIG.CONTACTS.SHEET_ID) ScriptApp.newTrigger('syncContacts').timeBased().everyHours(CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6).create();
+  Logger.log('Automatic sync is on: Dossier every ' + CONFIG.SYNC_EVERY_HOURS + ' hour(s), Contact Details every ' + (CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6) + ' hour(s).');
 }
 
 function removeTrigger() {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === 'syncDossier') ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() === 'syncDossier' || t.getHandlerFunction() === 'syncContacts') ScriptApp.deleteTrigger(t);
   });
 }

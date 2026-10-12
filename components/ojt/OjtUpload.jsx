@@ -1,14 +1,15 @@
 'use client';
-import { useMemo, useState } from 'react';
-import { FileUp } from 'lucide-react';
-import { sb } from '@/lib/supabase';
+import { useEffect, useMemo, useState } from 'react';
+import { FileUp, RefreshCw } from 'lucide-react';
+import { authFetch, sb } from '@/lib/supabase';
 import { fmtDuration, parseMeetFileName, readOjtWorkbook, suggestSessionMinutes, summarizeOjt } from '@/lib/ojt';
+import { addNotAttended } from '@/lib/contacts';
 import { useApp } from '../AppShell';
 import { ErrorText, Modal, Spinner } from '../ui';
 
 // Upload the OJT attendance + score workbook and save it as a session
 export default function OjtUpload({ trainers, onClose, onSaved }) {
-  const { profile, now } = useApp();
+  const { profile, now, showToast } = useApp();
   const isManager = profile.role === 'manager';
   const [file, setFile] = useState(null);
   const [parsed, setParsed] = useState(null);
@@ -31,7 +32,37 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   const [reading, setReading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const sum = useMemo(() => (parsed ? summarizeOjt(parsed.participants) : null), [parsed]);
+  // Department(s): everyone in them who is not in the Meet file is added as Absent ("Not attended")
+  const [contacts, setContacts] = useState([]);
+  const [depts, setDepts] = useState([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const loadContacts = async () => {
+    const all = [];
+    for (let from = 0; ; from += 1000) {
+      const { data } = await sb().from('contacts').select('name, official_email, personal_email, employee_code, department, active').eq('active', true).range(from, from + 999);
+      all.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    setContacts(all);
+  };
+  useEffect(() => { loadContacts(); }, []);
+  // Pull the latest Contact Details sheet now (via the Google script), then reload the departments
+  const refreshContacts = async () => {
+    setRefreshing(true);
+    try {
+      const r = await authFetch('/api/contacts-run', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.error || 'Could not refresh Contact Details');
+      await loadContacts();
+      showToast(j.running ? j.message : `Contact Details updated: ${j.rows} people (${j.added} new, ${j.updated} updated${j.deactivated ? `, ${j.deactivated} removed` : ''}).`);
+    } catch (e) { showToast(e.message, 'error'); }
+    setRefreshing(false);
+  };
+  const deptList = useMemo(() => Object.entries(contacts.reduce((m, c) => { if (c.department) m[c.department] = (m[c.department] || 0) + 1; return m; }, {}))
+    .sort((a, b) => a[0].localeCompare(b[0])), [contacts]);
+  const people = useMemo(() => (parsed ? addNotAttended(parsed.participants, contacts, depts, { withScores }) : []), [parsed, contacts, depts, withScores]);
+  const notAttended = people.filter((p) => p.not_attended).length;
+  const sum = useMemo(() => (parsed ? summarizeOjt(people) : null), [parsed, people]);
 
   const read = async (f, opts = {}) => {
     setReading(true); setError('');
@@ -75,7 +106,7 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   };
 
   const save = async () => {
-    if (!parsed?.participants.length) { setError('Upload a file first.'); return; }
+    if (!parsed?.participants.length && !people.length) { setError('Upload a file first.'); return; }
     if (!title.trim() || !date) { setError('Enter a session name and date.'); return; }
     if (requiredMinutes > sessionMinutes && sessionMinutes > 0) { setError('The minimum time cannot be longer than the session.'); return; }
     setSaving(true); setError('');
@@ -83,9 +114,10 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
       title: title.trim(), session_date: date, trainer_id: trainerId || null, pass_percent: Number(passPercent) || 70,
       source_file: file?.name || null, created_by: profile.id, session_type: type,
       session_minutes: sessionMinutes || null, min_present_minutes: requiredMinutes || null,
+      department: depts.length ? depts.join(', ') : null,
     }).select().single();
     if (e1) { setSaving(false); setError(e1.message); return; }
-    const rows = parsed.participants.map(({ belowMinimum, ...p }) => ({ ...p, session_id: s.id }));
+    const rows = people.map(({ belowMinimum, ...p }) => ({ ...p, not_attended: Boolean(p.not_attended), session_id: s.id }));
     for (let i = 0; i < rows.length; i += 500) {
       const { error: e2 } = await sb().from('ojt_participants').insert(rows.slice(i, i + 500));
       if (e2) { await sb().from('ojt_sessions').delete().eq('id', s.id); setSaving(false); setError(e2.message); return; }
@@ -146,6 +178,32 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
           </div>
         )}
         <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="label mb-0" htmlFor="ojt-dept">Department (from Contact Details)</label>
+            <button type="button" className="btn-secondary btn-sm" onClick={refreshContacts} disabled={refreshing} title="Get the latest Contact Details sheet">
+              {refreshing ? <Spinner size={14} /> : <RefreshCw size={14} />}{refreshing ? 'Updating…' : 'Refresh contacts'}
+            </button>
+          </div>
+          {deptList.length === 0 ? (
+            <p className="mt-1.5 text-xs text-slate-500">No Contact Details yet. Click “Refresh contacts” to load them from the Contact Details sheet.</p>
+          ) : (
+            <>
+              <select id="ojt-dept" className="input" value="" onChange={(e) => { const d = e.target.value; if (d && !depts.includes(d)) setDepts([...depts, d]); }}>
+                <option value="">{depts.length ? 'Add another department…' : 'Pick the department this session was for…'}</option>
+                {deptList.filter(([d]) => !depts.includes(d)).map(([d, n]) => <option key={d} value={d}>{d} ({n} people)</option>)}
+              </select>
+              {depts.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {depts.map((d) => (
+                    <button key={d} type="button" onClick={() => setDepts(depts.filter((x) => x !== d))} className="rounded-full bg-ink-800 px-3 py-1 text-xs font-semibold text-white" title="Remove">{d} ✕</button>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1.5 text-xs text-slate-500">Everyone in the picked department who is not in the uploaded file is added as <b className="text-red-700">Absent (Not attended)</b>. Leave empty to use only the people in the file.</p>
+            </>
+          )}
+        </div>
+        <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <input type="checkbox" className="h-4 w-4 accent-ink-800" checked={withScores}
               onChange={(e) => { setWithScores(e.target.checked); if (file) read(file, { scores: e.target.checked }); }} />
@@ -165,7 +223,8 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
             <span className="rounded-full bg-ink-50 px-3 py-1 font-semibold text-ink-800">{sum.participants} participants</span>
             <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">{sum.present} present</span>
-            <span className="rounded-full bg-red-100 px-3 py-1 font-semibold text-red-800">{sum.absent} absent (below {Math.floor(requiredMinutes / 60)} hr {requiredMinutes % 60} min)</span>
+            <span className="rounded-full bg-red-100 px-3 py-1 font-semibold text-red-800">{sum.absent - notAttended} absent (below {Math.floor(requiredMinutes / 60)} hr {requiredMinutes % 60} min)</span>
+            {notAttended > 0 && <span className="rounded-full bg-red-600 px-3 py-1 font-semibold text-white">{notAttended} not attended (not in the file)</span>}
             {withScores && <>
               <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">{sum.pass} pass</span>
               <span className="rounded-full bg-red-50 px-3 py-1 font-semibold text-red-800">{sum.fail} fail</span>
@@ -181,8 +240,8 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
           <div className="mt-3 max-h-56 overflow-auto rounded-xl border border-slate-200">
             <table className="tbl text-xs">
               <thead className="sticky top-0"><tr><th>Name</th><th>Duration</th><th>Attendance</th>{withScores && <><th>Score</th><th>Result</th></>}</tr></thead>
-              <tbody>{parsed.participants.map((p) => (
-                <tr key={p.email || p.full_name} className={p.attendance === 'A' ? 'bg-red-50 text-red-700' : ''}><td className={p.attendance === 'A' ? 'font-semibold' : ''}>{p.full_name}</td><td>{fmtDuration(p.duration_minutes) || 'did not join'}</td><td>{p.attendance === 'A' ? <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">Absent</span> : p.attendance || '—'}</td>{withScores && <><td>{p.score ?? (p.result === 'Absent' ? 'Absent' : '—')}{p.total ? ` / ${p.total}` : ''}</td><td>{p.result || '—'}</td></>}</tr>
+              <tbody>{people.map((p) => (
+                <tr key={`${p.email || ''}|${p.full_name}`} className={p.attendance === 'A' ? 'bg-red-50 text-red-700' : ''}><td className={p.attendance === 'A' ? 'font-semibold' : ''}>{p.full_name}</td><td>{p.not_attended ? 'not in the file' : fmtDuration(p.duration_minutes) || 'did not join'}</td><td>{p.attendance === 'A' ? <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">{p.not_attended ? 'Not attended' : 'Absent'}</span> : p.attendance || '—'}</td>{withScores && <><td>{p.score ?? (p.result === 'Absent' ? 'Absent' : '—')}{p.total ? ` / ${p.total}` : ''}</td><td>{p.result || '—'}</td></>}</tr>
               ))}</tbody>
             </table>
           </div>

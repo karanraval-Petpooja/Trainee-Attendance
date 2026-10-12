@@ -53,7 +53,7 @@ export default function OjtSessionPage() {
     <div className="space-y-5">
       <Link href="/ojt" className="inline-flex items-center gap-1 text-sm font-semibold text-ink-700 hover:underline"><ArrowLeft size={14} />All OJT / Upskill / PIP / Refresher sessions</Link>
       <PageHeader title={<span>{session.title} <span className="ml-1 align-middle rounded-full bg-ink-100 px-2.5 py-0.5 text-xs font-bold text-ink-700">{session.session_type || 'OJT'}</span></span>}
-        subtitle={`${fmtMedium(session.session_date)}${trainer ? ` · ${trainer.name}` : ''}${session.session_minutes ? ` · session ${fmtDuration(session.session_minutes)}` : ''}${session.min_present_minutes ? ` · Present needs ${fmtDuration(session.min_present_minutes)}` : ''}${session.source_file ? ` · ${session.source_file}` : ''}`}
+        subtitle={`${fmtMedium(session.session_date)}${trainer ? ` · ${trainer.name}` : ''}${session.department ? ` · ${session.department}` : ''}${session.session_minutes ? ` · session ${fmtDuration(session.session_minutes)}` : ''}${session.min_present_minutes ? ` · Present needs ${fmtDuration(session.min_present_minutes)}` : ''}${session.source_file ? ` · ${session.source_file}` : ''}`}
         actions={(
           <>
             <Link href={`/ojt/charts?session=${session.id}`} className="btn-secondary"><BarChart3 size={16} />Charts</Link>
@@ -94,10 +94,10 @@ export default function OjtSessionPage() {
                 <tr key={r.id} className={r.attendance === 'A' ? 'bg-red-50' : ''}>
                   <td className={`font-semibold ${r.attendance === 'A' ? 'text-red-700' : 'text-slate-800'}`}>{r.full_name}</td>
                   <td className="text-slate-500">{r.email || '—'}</td>
-                  <td className={r.attendance === 'A' ? 'font-semibold text-red-700' : ''}>{fmtDuration(r.duration_minutes) || 'did not join'}</td>
+                  <td className={r.attendance === 'A' ? 'font-semibold text-red-700' : ''}>{r.not_attended ? 'Not attended' : fmtDuration(r.duration_minutes) || 'did not join'}</td>
                   <td className="text-slate-500">{r.time_joined || '—'}</td>
                   <td className="text-slate-500">{r.time_exited || '—'}</td>
-                  <td>{r.attendance ? <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${chip[r.attendance]}`}>{r.attendance}</span> : '—'}</td>
+                  <td>{r.attendance ? <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${chip[r.attendance]}`}>{r.not_attended ? 'A · Not attended' : r.attendance}</span> : '—'}</td>
                   {scored && <>
                     <td>{r.score ?? '—'}{r.total ? <span className="text-slate-400"> / {r.total}</span> : ''}</td>
                     <td>{r.result ? <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${chip[r.result]}`}>{r.result}</span> : '—'}</td>

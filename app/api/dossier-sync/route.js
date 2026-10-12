@@ -51,7 +51,13 @@ export async function POST(req) {
     const startOf = (r) => (r.trainingStart && r.trainingStart > r.joining_date ? r.trainingStart : r.joining_date);
     const rows = fromDoj ? parsed.rows.filter((r) => startOf(r) >= fromDoj) : parsed.rows;
     // Codes looked up by the script in the Contact Details sheet fill rows that have no E Code yet
-    const codes = body.codesByEmail && typeof body.codesByEmail === 'object' ? body.codesByEmail : {};
+    const codes = body.codesByEmail && typeof body.codesByEmail === 'object' ? { ...body.codesByEmail } : {};
+    // E Codes from Contact Details (contacts table), matched on the official email
+    const emails = [...new Set(rows.map((r) => r.official_email?.toLowerCase()).filter((e) => e && !codes[e]))];
+    for (let i = 0; i < emails.length; i += 200) {
+      const { data: cs } = await a0.from('contacts').select('official_email, employee_code').in('official_email', emails.slice(i, i + 200)).not('employee_code', 'is', null);
+      (cs || []).forEach((c) => { codes[c.official_email.toLowerCase()] = c.employee_code; });
+    }
     rows.forEach((r) => {
       const c = r.official_email && codes[r.official_email.toLowerCase()];
       if (!r.employee_code && c && /^\d{3,8}$/.test(String(c).trim())) r.employee_code = String(c).trim();
