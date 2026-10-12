@@ -26,10 +26,10 @@
  *  To stop the automatic sync: choose "removeTrigger" → Run.
  */
 const CONFIG = {
-  APP_URL: 'https://YOUR-APP.vercel.app',           // your deployed app address (not localhost)
-  SYNC_SECRET: 'PASTE-THE-SAME-SECRET-AS-DOSSIER_SYNC_SECRET',
+  APP_URL: 'https://attendance-five-sable.vercel.app',           // your deployed app address (not localhost)
+  SYNC_SECRET: 'cb88ed54509c1a75268f3d832dc5a0781eb5fe3fe4858b68',
   SHEET_ID: '1F5Ji6NQuV2Q83pYGlpHX7CdFgHCuopNeW3CRgi6zsgw',           // the long code in the Dossier URL between /d/ and /edit
-  TAB_NAME: 'Sheet1',                              // exact name of the tab with the trainee rows
+  TAB_NAME: 'Data Sheet Report',                              // exact name of the tab with the trainee rows
   FIRST_DATA_ROW: 2,                                // first row with a trainee (below the headings)
   FROM_DOJ: '',                                     // optional: only trainees who joined on/after this date, e.g. '2026-07-01'
   TRAINER_MAP: {                                    // optional: Dossier trainer name → trainer login email in the app
