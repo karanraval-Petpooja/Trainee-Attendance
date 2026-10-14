@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock, Search } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { addDays, fmtClock, fmtLong, fmtTime } from '@/lib/dates';
-import { MARK_OPTIONS, outOfScope, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
+import { MARK_OPTIONS, notJoining, outOfScope, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
 import { useApp } from './AppShell';
 import { ErrorText, Modal, PageLoader, Spinner } from './ui';
 
@@ -50,7 +50,9 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
   const { active, outside } = useMemo(() => {
     const act = [];
     let out = 0;
-    trainees.forEach((t) => (!outOfScope(t, date) && (traineeActiveOn(t, date) || records[t.id]) ? act.push(t) : (out += 1)));
+    // In training that day, or already has an entry that day (kept visible to fix it) — except "not joining"
+    // statuses (Resigned, Offer Revoked, Drop Out…): they never appear, even with an old entry.
+    trainees.forEach((t) => (!outOfScope(t, date) && (traineeActiveOn(t, date) || (records[t.id] && !notJoining(t))) ? act.push(t) : (out += 1)));
     return { active: act, outside: out };
   }, [trainees, date, records]);
 
