@@ -633,7 +633,11 @@ export default function TraineesPage() {
 
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training'
     : ['offer_revoked', 'doj_revised', 'drop_out'].includes(t.exit_reason) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
-  const filtered = trainees.filter((t) => ((show === 'all' && !t.deleted_at) || stage(t) === show)
+  // Status filter: a group (In training, Ended…) or one Training Status value ("exit:resigned")
+  const inView = (t) => (show === 'all' ? !t.deleted_at
+    : show.startsWith('exit:') ? !t.deleted_at && t.status === 'active' && t.exit_reason === show.slice(5)
+      : stage(t) === show);
+  const filtered = trainees.filter((t) => inView(t)
     && (trainerFilter === 'all' || t.trainer_id === trainerFilter)
     && (dojFilter === 'all' || t.joining_date === dojFilter)
     && (batchFilter === 'all' || (batchFilter === 'none' ? !t.batch_id : t.batch_id === batchFilter))
@@ -789,7 +793,7 @@ export default function TraineesPage() {
         </div>
         <select className="input sm:w-48" value={dojFilter} onChange={(e) => setDojFilter(e.target.value)} aria-label="DOJ">
           <option value="all">All DOJs</option>
-          {Object.entries(trainees.filter((t) => t.joining_date && ((show === 'all' && !t.deleted_at) || stage(t) === show)
+          {Object.entries(trainees.filter((t) => t.joining_date && inView(t)
             && (trainerFilter === 'all' || t.trainer_id === trainerFilter)
             && (batchFilter === 'all' || (batchFilter === 'none' ? !t.batch_id : t.batch_id === batchFilter)))
             .reduce((m, t) => { m[t.joining_date] = (m[t.joining_date] || 0) + 1; return m; }, {}))
@@ -806,9 +810,16 @@ export default function TraineesPage() {
           <option value="training">In training ({counts.training || 0})</option>
           <option value="upcoming">Joining soon ({counts.upcoming || 0})</option>
           <option value="done">Handed over / ended ({counts.done || 0})</option>
-          <option value="inactive">Removed ({counts.inactive || 0})</option>
-          <option value="deleted">Deleted, reports kept ({counts.deleted || 0})</option>
-          <option value="all">All, except deleted ({trainees.filter((t) => !t.deleted_at).length})</option>
+          <optgroup label="By training status">
+            {Object.entries(EXIT_LABELS).filter(([k]) => k).map(([k, label]) => (
+              <option key={k} value={`exit:${k}`}>{k === 'handover' ? 'Handover' : label} ({trainees.filter((t) => !t.deleted_at && t.status === 'active' && t.exit_reason === k).length})</option>
+            ))}
+          </optgroup>
+          <optgroup label="Other">
+            <option value="inactive">Removed ({counts.inactive || 0})</option>
+            <option value="deleted">Deleted, reports kept ({counts.deleted || 0})</option>
+            <option value="all">All, except deleted ({trainees.filter((t) => !t.deleted_at).length})</option>
+          </optgroup>
         </select>
       </div>
 
