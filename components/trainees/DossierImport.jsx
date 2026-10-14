@@ -41,9 +41,13 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
   const [onlyTraining, setOnlyTraining] = useState(true);
   const today = now?.date || new Date().toISOString().slice(0, 10);
   const stillTraining = (r) => !r.exit_reason || (r.exit_reason === 'handover' && r.tcd_lwd && r.tcd_lwd >= today);
-  const parsedAll = useMemo(() => (onlyTraining ? { ...parsedFile, rows: parsedFile.rows.filter(stillTraining) } : parsedFile),
-    [parsedFile, onlyTraining, today]);
+  // Trainees already in the app always get their status from the sheet; the tick only limits NEW ones
+  const inApp = useMemo(() => makeMatcher(trainees), [trainees]);
+  const parsedAll = useMemo(() => (onlyTraining ? { ...parsedFile, rows: parsedFile.rows.filter((r) => stillTraining(r) || inApp(r)) } : parsedFile),
+    [parsedFile, onlyTraining, today, inApp]);
   const leftOut = parsedFile.rows.length - parsedAll.rows.length;
+  const existingCount = parsedAll.rows.filter((r) => inApp(r)).length;
+  const newCount = parsedAll.rows.length - existingCount;
   // DOJ filter: only trainees who joined on the picked dates are shown and imported (none picked = all)
   const [dojPick, setDojPick] = useState(() => new Set());
   const dojList = useMemo(() => {
@@ -77,6 +81,7 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
   // Detected trainer names → app trainer accounts (auto-match on first name)
   const detected = useMemo(() => [...new Set(parsed.rows.map((r) => r.trainerName).filter(Boolean))].sort(), [parsed.rows]);
   const autoMatch = (n) => matchTrainerName(n, trainers) || '';
+  const [editing, setEditing] = useState(() => new Set()); // matched names the manager chose to change
   const trainerFor = (r) => (r.trainerName ? (mapping[r.trainerName] ?? autoMatch(r.trainerName)) : '') || defaultTrainer || null;
   const tName = (id) => trainers.find((t) => t.id === id)?.name || '—';
 
@@ -103,7 +108,7 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
   };
 
   return (
-    <Modal title="Import from Dossier" onClose={onClose} wide
+    <Modal title="Upload Dossier sheet" onClose={onClose} wide
       footer={<>
         {progress && <span className="mr-auto self-center text-xs text-slate-500">{progress}</span>}
         <button className="btn-secondary" onClick={onClose}>Cancel</button>
@@ -128,8 +133,9 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
       {parsedFile.rows.length > 0 && (
         <label className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 px-3 py-2.5 text-sm">
           <input type="checkbox" className="h-4 w-4 accent-ink-800" checked={onlyTraining} onChange={(e) => { setOnlyTraining(e.target.checked); setDojPick(new Set()); }} />
-          <span className="font-semibold text-slate-800">Only trainees still in training</span>
-          <span className="text-xs text-slate-500">{onlyTraining ? `${leftOut} handed over / exited row${leftOut === 1 ? '' : 's'} left out` : 'all rows, including handed over / exited'}</span>
+          <span className="font-semibold text-slate-800">Add only new trainees who are still in training</span>
+          <span className="text-xs text-slate-500">{onlyTraining ? `${leftOut} old handed over / exited row${leftOut === 1 ? '' : 's'} not added` : 'all rows are added, including handed over / exited'}</span>
+          <span className="basis-full text-xs text-slate-600"><b>{existingCount}</b> trainee{existingCount === 1 ? '' : 's'} already in the app: status updated from the Training Status column · <b>{newCount}</b> new</span>
         </label>
       )}
 
@@ -163,27 +169,53 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
             <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">{attCount} attendance days</span>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {detected.map((n) => (
-              <div key={n}>
-                <label className="label text-xs" htmlFor={`map-${n}`}>Trainer “{n}” in the Dossier is</label>
-                <select id={`map-${n}`} className="input py-2" value={mapping[n] ?? autoMatch(n)} onChange={(e) => setMapping({ ...mapping, [n]: e.target.value })}>
-                  <option value="">Use the default below</option>
-                  {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </select>
+          {/* Trainer names are matched automatically; only names that cannot be matched ask for a choice */}
+          {(() => {
+            const nameOf = (id) => trainers.find((t) => t.id === id)?.name || '';
+            const matched = detected.filter((n) => !editing.has(n) && (mapping[n] ?? autoMatch(n)));
+            const ask = detected.filter((n) => editing.has(n) || !(mapping[n] ?? autoMatch(n)));
+            return (
+              <div className="mt-4 rounded-xl border border-slate-200 p-3">
+                <div className="text-sm font-bold text-ink-900">Trainers</div>
+                {matched.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {matched.map((n) => (
+                      <button key={n} type="button" onClick={() => setEditing(new Set([...editing, n]))} title="Change"
+                        className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+                        {n === nameOf(mapping[n] ?? autoMatch(n)) ? n : <>{n} → {nameOf(mapping[n] ?? autoMatch(n))}</>} ✓
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {matched.length > 0 && <p className="mt-1.5 text-[11px] text-slate-500">Matched automatically from the Trainer Name column. Click a name only if it is wrong.</p>}
+                {ask.length > 0 && (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {ask.map((n) => (
+                      <div key={n}>
+                        <label className="label text-xs" htmlFor={`map-${n}`}>“{n}” in the sheet is</label>
+                        <select id={`map-${n}`} className={`input py-2 ${!(mapping[n] ?? autoMatch(n)) ? 'border-amber-300' : ''}`} value={mapping[n] ?? autoMatch(n)} onChange={(e) => setMapping({ ...mapping, [n]: e.target.value })}>
+                          <option value="">Not assigned (no trainer)</option>
+                          {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {ask.some((n) => !(mapping[n] ?? autoMatch(n))) && (
+                  <p className="mt-2 text-xs text-amber-700">These names match no trainer login (or could be two trainers, like just “Karan”). Pick the trainer, or add the login on the Trainers page.</p>
+                )}
+                {parsed.rows.some((r) => !r.trainerName) && (
+                  <div className="mt-3 sm:w-1/2">
+                    <label className="label text-xs" htmlFor="map-default">Rows with an empty Trainer Name</label>
+                    <select id="map-default" className="input py-2" value={defaultTrainer} onChange={(e) => setDefaultTrainer(e.target.value)}>
+                      <option value="">Not assigned</option>
+                      {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
-            ))}
-            <div>
-              <label className="label text-xs" htmlFor="map-default">Trainer for rows without a trainer name</label>
-              <select id="map-default" className="input py-2" value={defaultTrainer} onChange={(e) => setDefaultTrainer(e.target.value)}>
-                <option value="">Not assigned</option>
-                {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-            </div>
-          </div>
-          {detected.some((n) => !(mapping[n] ?? autoMatch(n))) && (
-            <p className="mt-2 text-xs text-amber-700">Some trainer names have no matching login. Add them on the Trainers page first, or they get the default trainer.</p>
-          )}
+            );
+          })()}
 
           <div className="mt-4 space-y-2 text-sm">
             <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={withAttendance} onChange={(e) => setWithAttendance(e.target.checked)} />Import daily attendance (P, AB, HD, Holiday). Days are counted from the DOJ, skipping Sundays.</label>

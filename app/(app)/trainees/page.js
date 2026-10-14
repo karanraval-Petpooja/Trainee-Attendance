@@ -340,14 +340,18 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const isHandover = mode === 'handover';
-  // Outcome when training ends: handover, failed (= Not certified, same as the Dossier) or offer revoked
+  // Outcome when training ends: the same Training Status values as the Dossier sheet
   const [outcome, setOutcome] = useState('handover');
   const OUTCOMES = {
-    handover: { label: 'Handover to reporting manager', done: 'handed over', button: 'Confirm handover' },
-    not_certified: { label: 'Failed (Not certified)', done: 'marked Failed (Not certified)', button: 'Mark as Failed' },
-    offer_revoked: { label: 'Offer revoked', done: 'marked Offer revoked', button: 'Mark Offer revoked' },
+    handover: { label: 'Handover', done: 'handed over', button: 'Confirm handover', dateLabel: 'Last training day (TCD)' },
+    not_certified: { label: 'Not certified', done: 'marked Not certified', button: 'Mark Not certified', dateLabel: 'Last training day (TCD)' },
+    resigned: { label: 'Resigned', done: 'marked Resigned', button: 'Mark Resigned', dateLabel: 'Last working day (LWD)' },
+    drop_out: { label: 'Drop out', done: 'marked Drop out', button: 'Mark Drop out', dateLabel: 'Last day attended (optional)', optional: true },
+    service_not_required: { label: 'Service Not Required', done: 'marked Service Not Required', button: 'Mark Service Not Required', dateLabel: 'Last working day (LWD)' },
+    offer_revoked: { label: 'Offer Revoked', done: 'marked Offer Revoked', button: 'Mark Offer Revoked', dateLabel: 'Last day attended (optional)', optional: true },
+    doj_revised: { label: 'DOJ Revised', done: 'marked DOJ Revised', button: 'Mark DOJ Revised', dateLabel: 'Last day attended (optional)', optional: true },
   };
-  const dateOptional = outcome === 'offer_revoked'; // offer revoked: may never have joined
+  const dateOptional = Boolean(OUTCOMES[outcome].optional); // may never have joined
 
   const missingRag = isHandover && outcome === 'handover' ? items.filter((t) => !t.rag && !periodsOf(t)[periodsOf(t).length - 1].end) : [];
   const setRagFor = (t) => onSetRag(t, (saved) => setItems((list) => list.map((x) => (x.id === t.id ? { ...x, ...saved } : x))));
@@ -364,7 +368,7 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
       const last = periods[periods.length - 1];
       const row = {};
       if (isHandover) {
-        if (last.end || ['doj_revised', 'offer_revoked'].includes(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
+        if (last.end || ['doj_revised', 'offer_revoked', 'drop_out'].includes(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
         if (date && date < last.start) { skipped.push(`${t.name} (training started ${fmtMedium(last.start)})`); continue; }
         last.end = date || null;
         last.reason = outcome;
@@ -391,33 +395,33 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
   };
 
   return (
-    <Modal title={isHandover ? 'End training: handover / failed / offer revoked' : 'Bring back for training'} onClose={onClose}
+    <Modal title={isHandover ? 'Training status: handover or end training' : 'Bring back for training'} onClose={onClose}
       footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className={outcome === 'handover' || !isHandover ? 'btn-primary' : 'btn-danger'} onClick={run} disabled={working || missingRag.length > 0}>{working && <Spinner size={16} />}{isHandover ? OUTCOMES[outcome].button : 'Bring back'}</button></>}>
       <p className="text-sm text-slate-600">{single ? <b>{single.name}</b> : <b>{items.length} trainees</b>}</p>
       {isHandover && (
         <fieldset className="mt-4">
           <legend className="label">Outcome</legend>
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {Object.entries(OUTCOMES).map(([k, o]) => (
               <label key={k} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-semibold ${outcome === k ? (k === 'handover' ? 'border-ink-700 bg-ink-50 text-ink-900' : 'border-red-400 bg-red-50 text-red-800') : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
                 <input type="radio" name="ho-outcome" className="accent-ink-800" checked={outcome === k}
-                  onChange={() => { setOutcome(k); if (k === 'offer_revoked') setDate(''); else if (!date) setDate(now.date); }} />
+                  onChange={() => { setOutcome(k); if (o.optional) setDate(''); else if (!date) setDate(now.date); }} />
                 {o.label}
               </label>
             ))}
           </div>
         </fieldset>
       )}
-      <label className="label mt-4" htmlFor="ho-date">{!isHandover ? 'Training restarts on' : outcome === 'offer_revoked' ? 'Last day attended (optional)' : 'Last training day (TCD)'}</label>
+      <label className="label mt-4" htmlFor="ho-date">{!isHandover ? 'Training restarts on' : OUTCOMES[outcome].dateLabel}</label>
       <input id="ho-date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
       <p className="mt-1.5 text-xs text-slate-500">
         {!isHandover
           ? (date ? `They appear on their trainer's register again from ${fmtMedium(date)}. Their earlier attendance is kept.` : '')
-          : outcome === 'offer_revoked'
-            ? (date ? `They stay on the register up to ${fmtMedium(date)}, then are removed. Status: Offer Revoked.` : 'Leave empty if they never joined: they are removed from attendance and reports straight away. Status: Offer Revoked.')
-            : outcome === 'not_certified'
-              ? (date ? `They stay on the register up to ${fmtMedium(date)}. From ${fmtMedium(addDays(date, 1))} they disappear from attendance. Status: Not Certified (failed).` : '')
-              : (date ? `They stay on the register up to ${fmtMedium(date)}. From ${fmtMedium(addDays(date, 1))} they disappear from attendance, and the monthly sheet shows "Handover to Reporting Manager" on that day.` : '')}
+          : dateOptional
+            ? (date ? `They stay on the register up to ${fmtMedium(date)}, then are removed. Status: ${OUTCOMES[outcome].label}.` : `Leave empty if they never joined: they are removed from attendance and reports straight away. Status: ${OUTCOMES[outcome].label}.`)
+            : outcome === 'handover'
+              ? (date ? `They stay on the register up to ${fmtMedium(date)}. From ${fmtMedium(addDays(date, 1))} they disappear from attendance, and the monthly sheet shows "Handover to Reporting Manager" on that day.` : '')
+              : (date ? `They stay on the register up to ${fmtMedium(date)}. From ${fmtMedium(addDays(date, 1))} they disappear from attendance. Status: ${OUTCOMES[outcome].label}.` : '')}
       </p>
       {missingRag.length > 0 && (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3.5 py-3 text-sm text-red-800" role="alert">
@@ -628,7 +632,7 @@ export default function TraineesPage() {
   const [handover, setHandover] = useState(null); // { items, mode }
 
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training'
-    : ['offer_revoked', 'doj_revised'].includes(t.exit_reason) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
+    : ['offer_revoked', 'doj_revised', 'drop_out'].includes(t.exit_reason) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
   const filtered = trainees.filter((t) => ((show === 'all' && !t.deleted_at) || stage(t) === show)
     && (trainerFilter === 'all' || t.trainer_id === trainerFilter)
     && (dojFilter === 'all' || t.joining_date === dojFilter)
@@ -698,7 +702,7 @@ export default function TraineesPage() {
         actions={(
           <>
             <SyncNowButton onDone={reload} />
-            {isManager && <button className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Import from Dossier</button>}
+            {isManager && <button className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
             <button className="btn-primary" onClick={() => setForm(blank)}><Plus size={16} />Add Trainee</button>
@@ -874,8 +878,8 @@ export default function TraineesPage() {
                     <td><RagChip rag={t.rag} onClick={canEditRag(t, profile) ? () => setRagFor(t) : undefined} /></td>
                     <td>
                       <div className="flex justify-end gap-1">
-                        {isManager && !['doj_revised', 'offer_revoked'].includes(t.exit_reason) && (openPeriod(t)
-                          ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover, Failed or Offer revoked"><ArrowRightLeft size={14} />Handover</button>
+                        {isManager && (!['doj_revised', 'offer_revoked', 'drop_out'].includes(t.exit_reason) || t.tcd_lwd) && (openPeriod(t)
+                          ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
                           : <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'return' })} title="Bring back for training"><RotateCcw size={14} />Bring back</button>)}
                         <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>
                         <button className="btn-ghost btn-sm" onClick={() => toggle(t)} aria-label={t.status === 'active' ? `Remove ${t.name}` : `Restore ${t.name}`} title={t.status === 'active' ? 'Remove from attendance' : 'Restore'}>
