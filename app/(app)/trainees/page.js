@@ -7,7 +7,7 @@ import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner } from '@/comp
 import { useTrainees, useTrainers } from '@/lib/hooks';
 import { sb } from '@/lib/supabase';
 import { addDays, fmtMedium } from '@/lib/dates';
-import { EXIT_LABELS, openPeriod, periodsOf, traineeActiveOn } from '@/lib/status';
+import { EXIT_LABELS, notJoining, notJoiningReason, openPeriod, periodsOf, traineeActiveOn } from '@/lib/status';
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
@@ -351,7 +351,7 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
     offer_revoked: { label: 'Offer Revoked', done: 'marked Offer Revoked', button: 'Mark Offer Revoked', dateLabel: 'Last day attended (optional)', optional: true },
     doj_revised: { label: 'DOJ Revised', done: 'marked DOJ Revised', button: 'Mark DOJ Revised', dateLabel: 'Last day attended (optional)', optional: true },
   };
-  const dateOptional = Boolean(OUTCOMES[outcome].optional); // may never have joined
+  const dateOptional = outcome !== 'handover'; // not joining: off the attendance straight away, date only for records
 
   const missingRag = isHandover && outcome === 'handover' ? items.filter((t) => !t.rag && !periodsOf(t)[periodsOf(t).length - 1].end) : [];
   const setRagFor = (t) => onSetRag(t, (saved) => setItems((list) => list.map((x) => (x.id === t.id ? { ...x, ...saved } : x))));
@@ -368,16 +368,23 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
       const last = periods[periods.length - 1];
       const row = {};
       if (isHandover) {
-        if (last.end || ['doj_revised', 'offer_revoked', 'drop_out'].includes(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
+        if (last.end || notJoiningReason(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
         if (date && date < last.start) { skipped.push(`${t.name} (training started ${fmtMedium(last.start)})`); continue; }
         last.end = date || null;
         last.reason = outcome;
         if (outcome === 'handover' && rm.trim()) row.reporting_manager = rm.trim();
       } else {
-        if (!last.end) { skipped.push(`${t.name} (still in training)`); continue; }
-        if (date <= last.end) { skipped.push(`${t.name} (must be after ${fmtMedium(last.end)})`); continue; }
-        periods.push({ start: date, end: null, reason: null });
-        row.status = 'active';
+        if (notJoiningReason(last.reason)) {
+          // undo Resigned / Drop Out / …: the same training period is open again (no new period)
+          last.end = null;
+          last.reason = null;
+          row.status = 'active';
+        } else {
+          if (!last.end) { skipped.push(`${t.name} (still in training)`); continue; }
+          if (date <= last.end) { skipped.push(`${t.name} (must be after ${fmtMedium(last.end)})`); continue; }
+          periods.push({ start: date, end: null, reason: null });
+          row.status = 'active';
+        }
       }
       row.training_periods = periods;
       const { error: err } = await sb().from('trainees').update(row).eq('id', t.id);
@@ -418,7 +425,7 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
         {!isHandover
           ? (date ? `They appear on their trainer's register again from ${fmtMedium(date)}. Their earlier attendance is kept.` : '')
           : dateOptional
-            ? (date ? `They stay on the register up to ${fmtMedium(date)}, then are removed. Status: ${OUTCOMES[outcome].label}.` : `Leave empty if they never joined: they are removed from attendance and reports straight away. Status: ${OUTCOMES[outcome].label}.`)
+            ? `Not joining: removed from training attendance straight away (register, alerts, monthly sheet). Status: ${OUTCOMES[outcome].label}. The date is only kept for records.`
             : outcome === 'handover'
               ? (date ? `They stay on the register up to ${fmtMedium(date)}. From ${fmtMedium(addDays(date, 1))} they disappear from attendance, and the monthly sheet shows "Handover to Reporting Manager" on that day.` : '')
               : (date ? `They stay on the register up to ${fmtMedium(date)}. From ${fmtMedium(addDays(date, 1))} they disappear from attendance. Status: ${OUTCOMES[outcome].label}.` : '')}
@@ -632,7 +639,7 @@ export default function TraineesPage() {
   const [handover, setHandover] = useState(null); // { items, mode }
 
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training'
-    : ['offer_revoked', 'doj_revised', 'drop_out'].includes(t.exit_reason) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
+    : notJoining(t) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
   // Status filter: a group (In training, Ended…) or one Training Status value ("exit:resigned")
   const inView = (t) => (show === 'all' ? !t.deleted_at
     : show.startsWith('exit:') ? !t.deleted_at && t.status === 'active' && t.exit_reason === show.slice(5)
@@ -889,7 +896,7 @@ export default function TraineesPage() {
                     <td><RagChip rag={t.rag} onClick={canEditRag(t, profile) ? () => setRagFor(t) : undefined} /></td>
                     <td>
                       <div className="flex justify-end gap-1">
-                        {isManager && (!['doj_revised', 'offer_revoked', 'drop_out'].includes(t.exit_reason) || t.tcd_lwd) && (openPeriod(t)
+                        {isManager && (openPeriod(t) && !notJoiningReason(t.exit_reason)
                           ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
                           : <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'return' })} title="Bring back for training"><RotateCcw size={14} />Bring back</button>)}
                         <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>
