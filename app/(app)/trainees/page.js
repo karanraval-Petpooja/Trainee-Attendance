@@ -7,7 +7,7 @@ import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner } from '@/comp
 import { useTrainees, useTrainers } from '@/lib/hooks';
 import { sb } from '@/lib/supabase';
 import { addDays, fmtMedium } from '@/lib/dates';
-import { EXIT_LABELS, notJoining, notJoiningReason, openPeriod, periodsOf, traineeActiveOn } from '@/lib/status';
+import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, periodsOf, traineeActiveOn } from '@/lib/status';
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
@@ -331,8 +331,12 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
 }
 
 /** Manager only: hand over to reporting manager, or bring back for training. Works for one or many trainees. */
-function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag }) {
+function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag, trainers = [], batches = [] }) {
   const { now } = useApp();
+  // Retraining: failed → new training period (optionally with another trainer / batch)
+  const [retrainFrom, setRetrainFrom] = useState(addDays(now.date, 1));
+  const [retrainTrainer, setRetrainTrainer] = useState('');
+  const [retrainBatch, setRetrainBatch] = useState('');
   const [items, setItems] = useState(initialItems);
   const single = items.length === 1 ? items[0] : null;
   const [date, setDate] = useState(now.date);
@@ -344,14 +348,18 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
   const [outcome, setOutcome] = useState('handover');
   const OUTCOMES = {
     handover: { label: 'Handover', done: 'handed over', button: 'Confirm handover', dateLabel: 'Last training day (TCD)' },
-    not_certified: { label: 'Not certified', done: 'marked Not certified', button: 'Mark Not certified', dateLabel: 'Last training day (TCD)' },
+    failed: { label: 'Failed', done: 'updated', button: 'Confirm', dateLabel: 'Failed on (last day of this training)' },
     resigned: { label: 'Resigned', done: 'marked Resigned', button: 'Mark Resigned', dateLabel: 'Last working day (LWD)' },
     drop_out: { label: 'Drop out', done: 'marked Drop out', button: 'Mark Drop out', dateLabel: 'Last day attended (optional)', optional: true },
     service_not_required: { label: 'Service Not Required', done: 'marked Service Not Required', button: 'Mark Service Not Required', dateLabel: 'Last working day (LWD)' },
     offer_revoked: { label: 'Offer Revoked', done: 'marked Offer Revoked', button: 'Mark Offer Revoked', dateLabel: 'Last day attended (optional)', optional: true },
     doj_revised: { label: 'DOJ Revised', done: 'marked DOJ Revised', button: 'Mark DOJ Revised', dateLabel: 'Last day attended (optional)', optional: true },
   };
-  const dateOptional = outcome !== 'handover'; // not joining: off the attendance straight away, date only for records
+  const dateOptional = outcome !== 'handover' && outcome !== 'failed'; // not joining: off the attendance straight away, date only for records
+  // Failed: 1st fail → Retraining; 2nd fail (already retrained once) → Not Certified, removed
+  const failedBefore = (t) => periodsOf(t).some((p) => p.reason === 'retraining');
+  const firstFail = items.filter((t) => !failedBefore(t));
+  const secondFail = items.filter((t) => failedBefore(t));
 
   const missingRag = isHandover && outcome === 'handover' ? items.filter((t) => !t.rag && !periodsOf(t)[periodsOf(t).length - 1].end) : [];
   const setRagFor = (t) => onSetRag(t, (saved) => setItems((list) => list.map((x) => (x.id === t.id ? { ...x, ...saved } : x))));
@@ -367,7 +375,22 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
       const periods = periodsOf(t).map((p) => ({ ...p }));
       const last = periods[periods.length - 1];
       const row = {};
-      if (isHandover) {
+      if (isHandover && outcome === 'failed' && failedBefore(t)) {
+        // 2nd fail → Not Certified: removed (off training attendance straight away)
+        if (last.end || notJoiningReason(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
+        if (date < last.start) { skipped.push(`${t.name} (retraining started ${fmtMedium(last.start)})`); continue; }
+        last.end = date;
+        last.reason = 'not_certified';
+      } else if (isHandover && outcome === 'failed') {
+        // 1st fail → Retraining: a new training period starts
+        if (last.end || notJoiningReason(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
+        if (date < last.start) { skipped.push(`${t.name} (training started ${fmtMedium(last.start)})`); continue; }
+        if (!retrainFrom || retrainFrom <= date) { skipped.push(`${t.name} (retraining must start after ${fmtMedium(date)})`); continue; }
+        last.end = date;
+        last.reason = 'retraining';
+        periods.push({ start: retrainFrom, end: null, reason: null });
+        if (retrainBatch) row.batch_id = retrainBatch === 'none' ? null : retrainBatch;
+      } else if (isHandover) {
         if (last.end || notJoiningReason(last.reason)) { skipped.push(`${t.name} (training already ended)`); continue; }
         if (date && date < last.start) { skipped.push(`${t.name} (training started ${fmtMedium(last.start)})`); continue; }
         last.end = date || null;
@@ -391,13 +414,21 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
       if (err) { skipped.push(`${t.name}: ${err.message}`); continue; }
       done += 1;
     }
+    // Retraining with another trainer: switch them from the retraining start date (keeps trainer history)
+    if (isHandover && outcome === 'failed' && retrainTrainer && done) {
+      const ids = firstFail.filter((t) => !skipped.some((x) => x.startsWith(t.name))).map((t) => t.id);
+      const { error: e2 } = await sb().rpc('transfer_trainees', { p_trainees: ids, p_trainer: retrainTrainer, p_from: retrainFrom, p_purpose: 'Retraining' });
+      if (e2) skipped.push(`trainer switch: ${e2.message}`);
+    }
     setWorking(false);
     if (skipped.length) {
       setError(`${done} updated. Skipped: ${skipped.join('; ')}`);
       onDone(null);
       return;
     }
-    onDone(isHandover ? `${done} trainee${done === 1 ? '' : 's'} ${OUTCOMES[outcome].done}.` : `${done} trainee${done === 1 ? '' : 's'} back in training.`);
+    onDone(!isHandover ? `${done} trainee${done === 1 ? '' : 's'} back in training.`
+      : outcome === 'failed' ? [firstFail.length && `${firstFail.length} moved to Retraining`, secondFail.length && `${secondFail.length} Not Certified (removed)`].filter(Boolean).join(' · ') + '.'
+        : `${done} trainee${done === 1 ? '' : 's'} ${OUTCOMES[outcome].done}.`);
     onClose();
   };
 
@@ -424,6 +455,7 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
       <p className="mt-1.5 text-xs text-slate-500">
         {!isHandover
           ? (date ? `They appear on their trainer's register again from ${fmtMedium(date)}. Their earlier attendance is kept.` : '')
+          : outcome === 'failed' ? ''
           : dateOptional
             ? `Not joining: removed from training attendance straight away (register, alerts, monthly sheet). Status: ${OUTCOMES[outcome].label}. The date is only kept for records.`
             : outcome === 'handover'
@@ -441,6 +473,46 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag })
           </div>
         </div>
       )}
+      {isHandover && outcome === 'failed' && (
+        <div className="mt-4 space-y-2 text-sm">
+          {firstFail.length > 0 && (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
+              <b>1st fail → Retraining:</b> {firstFail.map((t) => t.name).join(', ')}
+            </div>
+          )}
+          {secondFail.length > 0 && (
+            <div className="rounded-lg bg-red-50 px-3 py-2 text-red-800">
+              <b>2nd fail → Not Certified (removed):</b> {secondFail.map((t) => t.name).join(', ')}. They are taken off training attendance straight away.
+            </div>
+          )}
+        </div>
+      )}
+      {isHandover && outcome === 'failed' && firstFail.length > 0 && (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="label text-xs" htmlFor="rt-from">Retraining starts on</label>
+              <input id="rt-from" type="date" className="input" value={retrainFrom} min={date ? addDays(date, 1) : undefined} onChange={(e) => setRetrainFrom(e.target.value)} />
+            </div>
+            <div>
+              <label className="label text-xs" htmlFor="rt-trainer">Trainer for retraining</label>
+              <select id="rt-trainer" className="input" value={retrainTrainer} onChange={(e) => setRetrainTrainer(e.target.value)}>
+                <option value="">Same trainer</option>
+                {trainers.map((tr) => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label text-xs" htmlFor="rt-batch">Batch for retraining</label>
+              <select id="rt-batch" className="input" value={retrainBatch} onChange={(e) => setRetrainBatch(e.target.value)}>
+                <option value="">Same batch</option>
+                {batches.filter((b) => b.status === 'active').map((b) => <option key={b.id} value={b.id}>{b.code}</option>)}
+              </select>
+            </div>
+          </div>
+          <p className="mt-2 text-xs text-amber-900">They stay on training attendance: the failed training ends on {date ? fmtMedium(date) : '…'}, and retraining starts on {retrainFrom ? fmtMedium(retrainFrom) : '…'}. Earlier attendance is kept. Status shows “Retraining”.</p>
+        </div>
+      )}
+
       {isHandover && outcome === 'handover' && (
         <>
           <label className="label mt-4" htmlFor="ho-rm">Reporting manager</label>
@@ -642,6 +714,7 @@ export default function TraineesPage() {
     : notJoining(t) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
   // Status filter: a group (In training, Ended…) or one Training Status value ("exit:resigned")
   const inView = (t) => (show === 'all' ? !t.deleted_at
+    : show === 'retraining' ? !t.deleted_at && t.status === 'active' && isRetraining(t)
     : show.startsWith('exit:') ? !t.deleted_at && t.status === 'active' && t.exit_reason === show.slice(5)
       : stage(t) === show);
   const filtered = trainees.filter((t) => inView(t)
@@ -818,6 +891,7 @@ export default function TraineesPage() {
           <option value="upcoming">Joining soon ({counts.upcoming || 0})</option>
           <option value="done">Handed over / ended ({counts.done || 0})</option>
           <optgroup label="By training status">
+            <option value="retraining">Retraining ({trainees.filter((t) => !t.deleted_at && t.status === 'active' && isRetraining(t)).length})</option>
             {Object.entries(EXIT_LABELS).filter(([k]) => k).map(([k, label]) => (
               <option key={k} value={`exit:${k}`}>{k === 'handover' ? 'Handover' : label} ({trainees.filter((t) => !t.deleted_at && t.status === 'active' && t.exit_reason === k).length})</option>
             ))}
@@ -886,6 +960,7 @@ export default function TraineesPage() {
                         );
                       })()}
                       {t.tcd_lwd && t.exit_reason && <div className="text-xs text-slate-400">{EXIT_LABELS[t.exit_reason]}</div>}
+                      {isRetraining(t) && <div className="text-xs font-semibold text-amber-700">Retraining</div>}
                       {periodsOf(t).length > 1 && <div className="text-xs font-semibold text-ink-600">{openPeriod(t) ? 'Back in training' : 'Trained'} · {periodsOf(t).length} periods</div>}
                     </td>
                     <td className="text-slate-600">{t.reporting_manager || '—'}</td>
@@ -921,7 +996,7 @@ export default function TraineesPage() {
       {dossier && <DossierImport trainers={trainers} trainees={trainees} onClose={() => setDossier(false)} onDone={(m) => { showToast(m); reload(); }} />}
       {newBatch && <NewBatch trainers={trainers} batches={batches} onClose={() => setNewBatch(false)} onDone={(m, id) => { showToast(m); reload(); if (id) { setBatchFilter(id); setShow('all'); } }} />}
       {handover && (
-        <HandoverModal items={handover.items} mode={handover.mode} onClose={() => setHandover(null)}
+        <HandoverModal items={handover.items} mode={handover.mode} onClose={() => setHandover(null)} trainers={trainers} batches={batches}
           onSetRag={(t, done) => setRagFor({ ...t, _after: done })}
           onDone={(msg) => { if (msg) showToast(msg); clearSelection(); reload(); }} />
       )}
