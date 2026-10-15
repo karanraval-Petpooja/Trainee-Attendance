@@ -3,7 +3,7 @@
 import { admin, errorResponse, httpError } from '@/lib/supabaseAdmin';
 import { isHeadedDossier, parseDossier, parseDossierByHeader } from '@/lib/parseDossier';
 import { nowInTz } from '@/lib/dates';
-import { executeDossierSync, makeTrainerResolver, planDossierSync } from '@/lib/dossierSync';
+import { executeDossierSync, makeTrainerResolver, planDossierSync, rowsToCorrect } from '@/lib/dossierSync';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -66,6 +66,9 @@ export async function POST(req) {
     const a = admin();
     const trainers = await fetchAll(() => a.from('profiles').select('id, name, email').eq('role', 'trainer').eq('status', 'active'));
     const existing = await fetchAll(() => a.from('trainees').select('*'));
+    // Trainees imported earlier with wrong dates get corrected by their (pre-cut-off) sheet rows; nothing is removed
+    const fixRows = fromDoj ? rowsToCorrect(parsed.rows.filter((r) => startOf(r) < fromDoj), rows, existing, fromDoj) : [];
+    rows.push(...fixRows);
     const defaultTrainerId = body.defaultTrainerEmail
       ? trainers.find((t) => t.email.toLowerCase() === String(body.defaultTrainerEmail).toLowerCase())?.id || null
       : null;
@@ -85,7 +88,7 @@ export async function POST(req) {
       added: res.added, updated: res.updated, attendance_days: res.days, errors: errors.length ? errors.slice(0, 20).join('\n') : null,
     });
 
-    return Response.json({ ok: true, rows: rows.length, added: res.added, updated: res.updated, trainersChanged: res.trainersChanged || 0, attendanceDays: res.days, errors: errors.slice(0, 20) });
+    return Response.json({ ok: true, rows: rows.length, added: res.added, updated: res.updated, trainersChanged: res.trainersChanged || 0, attendanceDays: res.days, correctedWrongDates: fixRows.length, errors: errors.slice(0, 20) });
   } catch (e) {
     return errorResponse(e);
   }

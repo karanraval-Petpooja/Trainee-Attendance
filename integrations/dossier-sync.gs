@@ -25,11 +25,13 @@
  *     every CONTACTS.REFRESH_EVERY_HOURS hours; the app's Contact Details page also has a Refresh button.
  *  To stop the automatic sync: choose "removeTrigger" → Run.
  */
+const SCRIPT_VERSION = '2026-10-15 real-dates-v4'; // shown in the log, so you can see which code is running
+
 const CONFIG = {
-  APP_URL: 'https://attendance-five-sable.vercel.app',           // your deployed app address (not localhost)
-  SYNC_SECRET: 'cb88ed54509c1a75268f3d832dc5a0781eb5fe3fe4858b68',
+  APP_URL: 'https://YOUR-APP.vercel.app',           // your deployed app address (not localhost)
+  SYNC_SECRET: 'PASTE-THE-SAME-SECRET-AS-DOSSIER_SYNC_SECRET',
   SHEET_ID: '1F5Ji6NQuV2Q83pYGlpHX7CdFgHCuopNeW3CRgi6zsgw',           // the long code in the Dossier URL between /d/ and /edit
-  TAB_NAME: 'Data Sheet Report',                              // exact name of the tab with the trainee rows
+  TAB_NAME: 'Sheet1',                              // exact name of the tab with the trainee rows
   FIRST_DATA_ROW: 2,                                // first row with a trainee (below the headings)
   FROM_DOJ: '',                                     // optional: only trainees who joined on/after this date, e.g. '2026-07-01'
   TRAINER_MAP: {                                    // optional: Dossier trainer name → trainer login email in the app
@@ -49,7 +51,8 @@ const CONFIG = {
   // and for filling missing E Codes. YOUR Google account needs view access. Empty SHEET_ID = off.
   CONTACTS: {
     SHEET_ID: '1FDODawNLYPxIp9PdJm8NDHFrEBbOKGZcOwS7WkDZOt4', // Contact Details sheet
-    TAB_NAME: 'Contact Details_Petpooja',           // tab with the employee list
+    TAB_GID: '',                                    // optional: tab ID from the link (…#gid=…); empty = use TAB_NAME
+    TAB_NAME: 'ACTIVE',                             // tab name at the bottom of the Contact Details sheet
     FIRST_DATA_ROW: 0,                              // 0 = find the heading row automatically (Name + Department)
     REFRESH_EVERY_HOURS: 6,                         // automatic refresh; also on demand: app → Contact Details → Refresh
     EMAIL_COLUMN: '',                               // optional (old method): column letter with the official email
@@ -86,7 +89,8 @@ function runSync_() {
   const heads = header.map(function (h) { return String(h).trim().toLowerCase(); });
   const nameCol = heads.indexOf('name') >= 0 ? heads.indexOf('name') : 4;   // Master Dossier: column E
   const dojCol = heads.indexOf('doj') >= 0 ? heads.indexOf('doj') : 1;      // Master Dossier: column B
-  const values = sheet.getRange(CONFIG.FIRST_DATA_ROW, 1, n, sheet.getLastColumn()).getDisplayValues();
+  const dataRange = sheet.getRange(CONFIG.FIRST_DATA_ROW, 1, n, sheet.getLastColumn());
+  const values = realDates_(dataRange, ss.getSpreadsheetTimeZone());
   const fills = sheet.getRange(CONFIG.FIRST_DATA_ROW, nameCol + 1, n, 1).getBackgrounds(); // Name column colour = status
   const keep = [];
   values.forEach(function (r, i) { if (String(r[nameCol] || '').trim() && String(r[dojCol] || '').trim()) keep.push(i); }); // has Name and DOJ
@@ -134,11 +138,66 @@ function runSync_() {
 // Contact Details → app (employee list with departments, used for "Not attended" in sessions).
 // Uses CONTACTS.SHEET_ID and CONTACTS.TAB_NAME; headings must include Name and Department.
 // ---------------------------------------------------------------------------
+// Dates as they really are, not as the sheet shows them (a sheet shown month-first, e.g. 2/9/2026,
+// would otherwise be read as 2 September). Only for date columns that hold real dates WITH a year;
+// columns where dates were typed as text keep the shown text, and year-less dates ("19-Mar") keep
+// the shown text so the app can take the year from the batch.
+function realDates_(range, tz) {
+  const shown = range.getDisplayValues();
+  const raw = range.getValues();
+  const fmts = range.getNumberFormats();
+  const cols = shown.length ? shown[0].length : 0;
+  for (var c = 0; c < cols; c++) {
+    var hasDates = false; var typedDates = false;
+    for (var r = 0; r < raw.length; r++) {
+      const v = raw[r][c];
+      if (v instanceof Date) hasDates = true;
+      else if (typeof v === 'string' && /^\s*\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2,4}\s*$/.test(v)) typedDates = true;
+    }
+    if (!hasDates || typedDates) continue;
+    for (var r2 = 0; r2 < raw.length; r2++) {
+      const v2 = raw[r2][c];
+      if (v2 instanceof Date && /y/i.test(String(fmts[r2][c] || ''))) shown[r2][c] = Utilities.formatDate(v2, tz, 'yyyy-MM-dd');
+    }
+  }
+  return shown;
+}
+
+function contactsTab_(c) {
+  const book = SpreadsheetApp.openById(c.SHEET_ID);
+  const tabs = book.getSheets();
+  const clean = function (x) { return String(x || '').trim().toLowerCase().replace(/\s+/g, ' '); };
+  var sheet = null;
+  if (c.TAB_GID !== '' && c.TAB_GID !== null && c.TAB_GID !== undefined) {
+    sheet = tabs.filter(function (t) { return String(t.getSheetId()) === String(c.TAB_GID); })[0] || null;
+  }
+  if (!sheet && c.TAB_NAME) sheet = tabs.filter(function (t) { return clean(t.getName()) === clean(c.TAB_NAME); })[0] || null;
+  if (!sheet) { // no match: use the first tab whose top rows have a Name and a Department-type heading
+    sheet = tabs.filter(function (t) {
+      const rows = t.getLastRow(); const cols = t.getLastColumn();
+      if (!rows || !cols) return false;
+      const top = t.getRange(1, 1, Math.min(10, rows), cols).getDisplayValues();
+      return top.some(function (r) {
+        const cells = r.map(function (x) { return String(x).toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); });
+        return cells.some(function (x) { return /name/.test(x); }) && cells.some(function (x) { return /depart|\bdept\b|^team( name)?$|^function$/.test(x); });
+      });
+    })[0] || null;
+    if (sheet) Logger.log('Contact Details: tab "' + c.TAB_NAME + '" not found, using tab "' + sheet.getName() + '" (gid ' + sheet.getSheetId() + ') which has Name + Department headings.');
+  }
+  if (!sheet && tabs.length === 1) sheet = tabs[0];
+  if (!sheet) {
+    throw new Error('Contact Details tab not found. Tabs in "' + book.getName() + '": ' +
+      tabs.map(function (t) { return '"' + t.getName() + '" (gid ' + t.getSheetId() + ')'; }).join(', ') +
+      '. Put the right one in CONFIG.CONTACTS.TAB_GID or TAB_NAME.');
+  }
+  return sheet;
+}
+
 function syncContacts() {
+  Logger.log('Script version ' + SCRIPT_VERSION);
   const c = CONFIG.CONTACTS;
   if (!c || !c.SHEET_ID) throw new Error('Fill CONTACTS.SHEET_ID and CONTACTS.TAB_NAME in CONFIG first.');
-  const sheet = SpreadsheetApp.openById(c.SHEET_ID).getSheetByName(c.TAB_NAME);
-  if (!sheet) throw new Error('Contact Details tab "' + c.TAB_NAME + '" not found');
+  const sheet = contactsTab_(c);
   const last = sheet.getLastRow();
   const width = sheet.getLastColumn();
   var first = c.FIRST_DATA_ROW || 0;
@@ -170,15 +229,14 @@ function syncContacts() {
     total.rows += body.rows; total.added += body.added; total.updated += body.updated; total.deactivated += body.deactivated || 0;
     if (!rows.length) break;
   }
-  Logger.log('Contacts: ' + total.rows + ' rows, ' + total.added + ' added, ' + total.updated + ' updated, ' + total.deactivated + ' no longer in the sheet.');
+  Logger.log('Contacts (tab "' + sheet.getName() + '"): ' + total.rows + ' rows, ' + total.added + ' added, ' + total.updated + ' updated, ' + total.deactivated + ' no longer in the sheet.');
   return total;
 }
 
 function readContactCodes() {
   const c = CONFIG.CONTACTS;
   if (!c || !c.SHEET_ID || !c.EMAIL_COLUMN || !c.CODE_COLUMN) return {};
-  const sheet = SpreadsheetApp.openById(c.SHEET_ID).getSheetByName(c.TAB_NAME);
-  if (!sheet) throw new Error('Contact Details tab "' + c.TAB_NAME + '" not found');
+  const sheet = contactsTab_(c);
   const last = sheet.getLastRow();
   if (last < c.FIRST_DATA_ROW) return {};
   const n = last - c.FIRST_DATA_ROW + 1;

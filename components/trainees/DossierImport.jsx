@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { sb } from '@/lib/supabase';
 import { fmtMedium } from '@/lib/dates';
 import { parseDossier, parseDossierByHeader, isHeadedDossier } from '@/lib/parseDossier';
-import { executeDossierSync, makeMatcher, matchTrainerName, planDossierSync } from '@/lib/dossierSync';
+import { executeDossierSync, makeMatcher, matchTrainerName, planDossierSync, rowsToCorrect } from '@/lib/dossierSync';
 import { readDossierXlsx } from '@/lib/readDossierXlsx';
 import { EXIT_LABELS, RAG } from '@/lib/status';
 import { useApp } from '../AppShell';
@@ -35,7 +35,7 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
     if (!cutoff) return { ...res, beforeCutoff: 0 };
     const startOf = (r) => (r.trainingStart && r.trainingStart > r.joining_date ? r.trainingStart : r.joining_date);
     const kept = res.rows.filter((r) => startOf(r) >= cutoff);
-    return { ...res, rows: kept, beforeCutoff: res.rows.length - kept.length };
+    return { ...res, rows: kept, beforeCutoff: res.rows.length - kept.length, before: res.rows.filter((r) => startOf(r) < cutoff) };
   }, [text, colors, now?.date, cutoff]);
   // Only trainees still in training (default): no handover / exit yet, or a TCD that is still ahead
   const [onlyTraining, setOnlyTraining] = useState(true);
@@ -93,11 +93,13 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
     setWorking(true);
     setError('');
     try {
+      // Trainees imported earlier with wrong dates get corrected by their (pre-cut-off) sheet rows; nothing is removed
+      const fixRows = rowsToCorrect(parsedFile.before || [], parsed.rows, trainees, cutoff);
       const switched = new Set(trainees.filter((t) => t._assign?.length).map((t) => t.id));
-      const plan = planDossierSync(parsed.rows, trainees, (n) => trainerFor({ trainerName: n }), { switched });
+      const plan = planDossierSync([...parsed.rows, ...fixRows], trainees, (n) => trainerFor({ trainerName: n }), { switched });
       const res = await executeDossierSync(sb(), plan, { withAttendance, overwrite, createdBy: profile.id, onProgress: setProgress });
       if (res.errors.length) setError(`Saved with some problems: ${res.errors.slice(0, 3).join('; ')}${res.errors.length > 3 ? ` (+${res.errors.length - 3} more)` : ''}`);
-      onDone(`Dossier imported: ${res.added} added, ${res.updated} updated${withAttendance ? `, ${res.days} attendance days saved` : ''}.`);
+      onDone(`Dossier imported: ${res.added} added, ${res.updated} updated${fixRows.length ? ` (${fixRows.length} with wrong dates corrected)` : ''}${withAttendance ? `, ${res.days} attendance days saved` : ''}.`);
       if (!res.errors.length) onClose();
     } catch (e) {
       setError(e.message);
