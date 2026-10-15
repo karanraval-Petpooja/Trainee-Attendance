@@ -1,7 +1,7 @@
 -- =====================================================================
--- UPDATE: only a manager can remove from attendance, restore or delete a trainee.
--- Trainers keep everything else (marking attendance, RAG, editing details).
--- Run once in Supabase → SQL Editor.
+-- UPDATE: trainers cannot edit, remove, restore or delete trainees.
+-- Trainers can still: mark attendance, set RAG, switch trainer, move to a batch.
+-- Managers: no change. Run once in Supabase → SQL Editor (safe to run again).
 -- =====================================================================
 create or replace function public.trainees_before_write() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -24,6 +24,14 @@ begin
     end if;
     if not mgr and (new.status is distinct from old.status or new.deleted_at is distinct from old.deleted_at) then
       raise exception 'Only a manager can remove, restore or delete a trainee';
+    end if;
+    -- Trainers may only set RAG, switch trainer and move to a batch; every other detail is manager-only
+    if not mgr and (to_jsonb(new) - array['rag', 'rag_remark', 'rag_updated_at', 'rag_updated_by', 'rag_review_status',
+                                          'rag_reviewed_by', 'rag_reviewed_at', 'rag_review_note', 'batch_id', 'trainer_id', 'updated_at'])
+                   is distinct from
+                   (to_jsonb(old) - array['rag', 'rag_remark', 'rag_updated_at', 'rag_updated_by', 'rag_review_status',
+                                          'rag_reviewed_by', 'rag_reviewed_at', 'rag_review_note', 'batch_id', 'trainer_id', 'updated_at']) then
+      raise exception 'Only a manager can edit trainee details';
     end if;
     -- Form edits of TCD / status (or DOJ) without touching the periods → apply them to the periods
     if new.training_periods is not distinct from old.training_periods

@@ -989,7 +989,7 @@ export default function TraineesPage() {
                         {isManager && (openPeriod(t) && !notJoiningReason(t.exit_reason)
                           ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
                           : <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'return' })} title="Bring back for training"><RotateCcw size={14} />Bring back</button>)}
-                        <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>
+                        {isManager && <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>}
                         {isManager && (
                           <button className="btn-ghost btn-sm" onClick={() => toggle(t)} aria-label={t.status === 'active' ? `Remove ${t.name}` : `Restore ${t.name}`} title={t.status === 'active' ? 'Remove from attendance' : 'Restore'}>
                             {t.status === 'active' ? <UserX size={14} className="text-red-600" /> : <UserCheck size={14} className="text-emerald-600" />}
