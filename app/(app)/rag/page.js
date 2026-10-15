@@ -39,7 +39,7 @@ export default function RagReportPage() {
 
   const download = () => downloadTableXlsx({
     headers: ['E Code', 'E Name', 'Batch', 'Track', 'Designation', 'Trainer', 'Reporting manager', 'DOJ', 'TCD / LWD', 'Status', 'RAG', 'Remarks', 'Updated'],
-    rows: rows.map((t) => [t.employee_code || '', t.name, t._batch?.code || '', t.track || '', t.designation || '', names[t.trainer_id] || '',
+    rows: rows.map((t) => [t.employee_code || '', t.name, t._batch?.code || '', t.track || '', t.designation || '', names[t.trainer_id] || t.trainer_label || '',
       t.reporting_manager || '', fmtMedium(t.joining_date), t.tcd_lwd ? fmtMedium(t.tcd_lwd) : '', statusText(t),
       t.rag ? RAG[t.rag].label : '', t.rag_remark || '', t.rag_updated_at ? fmtDateTime(t.rag_updated_at, tz) : '']),
     filename: `RAG_Report_${now.date}.xlsx`,
@@ -111,7 +111,7 @@ export default function RagReportPage() {
                       <td className="text-slate-600">{t.employee_code || '—'}</td>
                       <td><div className="font-semibold text-slate-800">{t.name}</div>{t.designation && <div className="text-xs text-slate-400">{t.designation}</div>}</td>
                       <td className="text-slate-600">{[t._batch?.code, t.track].filter(Boolean).join(' · ') || '—'}</td>
-                      {isManager && <td className="text-slate-600">{names[t.trainer_id] || '—'}</td>}
+                      {isManager && <td className="text-slate-600">{names[t.trainer_id] || t.trainer_label || '—'}</td>}
                       <td className="text-slate-600">{fmtMedium(t.joining_date)}</td>
                       <td className="text-slate-600">{t.tcd_lwd ? fmtMedium(t.tcd_lwd) : '—'}</td>
                       <td className="text-slate-600">{statusText(t)}</td>

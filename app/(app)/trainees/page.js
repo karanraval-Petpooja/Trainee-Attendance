@@ -965,7 +965,9 @@ export default function TraineesPage() {
                     </td>
                     <td className="text-slate-600">{t.reporting_manager || '—'}</td>
                     <td className="text-slate-600">
-                      {t.trainer_id === profile.id ? 'You' : trainerNames[t.trainer_id] || trainerName(t.trainer_id)}
+                      {t.trainer_id === profile.id ? 'You' : t.trainer_id ? (trainerNames[t.trainer_id] || trainerName(t.trainer_id))
+                        : t.trainer_label ? <span title="Trainer from the Dossier sheet, not in the app">{t.trainer_label} <span className="text-xs text-slate-400">(not in app)</span></span>
+                          : 'Not assigned'}
                       {t._assign?.length > 1 && <div className="text-xs text-slate-400">since {fmtMedium(t._assign[t._assign.length - 1].start_date)}</div>}
                     </td>
                     <td><RagChip rag={t.rag} onClick={canEditRag(t, profile) ? () => setRagFor(t) : undefined} /></td>
