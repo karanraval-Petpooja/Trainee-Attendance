@@ -100,7 +100,7 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
       const plan = planDossierSync([...parsed.rows, ...fixRows], trainees, (n) => trainerFor({ trainerName: n }), { switched });
       const res = await executeDossierSync(sb(), plan, { withAttendance, overwrite, createdBy: profile.id, onProgress: setProgress });
       if (res.errors.length) setError(`Saved with some problems: ${res.errors.slice(0, 3).join('; ')}${res.errors.length > 3 ? ` (+${res.errors.length - 3} more)` : ''}`);
-      onDone(`Dossier imported: ${res.added} added, ${res.updated} updated${fixRows.length ? ` (${fixRows.length} with wrong dates corrected)` : ''}${withAttendance ? `, ${res.days} attendance days saved` : ''}.`);
+      onDone(`Dossier imported: ${res.added} added, ${res.updated} updated${fixRows.length ? ` (${fixRows.length} with wrong dates corrected)` : ''}${withAttendance && res.days ? `, ${res.days} attendance days saved` : ''}.`);
       if (!res.errors.length) onClose();
     } catch (e) {
       setError(e.message);
@@ -231,8 +231,14 @@ export default function DossierImport({ trainers, trainees, onClose, onDone }) {
           })()}
 
           <div className="mt-4 space-y-2 text-sm">
-            <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={withAttendance} onChange={(e) => setWithAttendance(e.target.checked)} />Import daily attendance (P, AB, HD, Holiday). Days are counted from the DOJ, skipping Sundays.</label>
-            {withAttendance && <label className="ml-6 flex items-center gap-2 text-slate-600"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />Overwrite attendance already marked in the app</label>}
+            {parsed.rows.some((r) => r.attendance?.length) ? (
+              <>
+                <label className="flex items-center gap-2"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={withAttendance} onChange={(e) => setWithAttendance(e.target.checked)} />Import daily attendance (P, AB, HD, Holiday). Days are counted from the DOJ, skipping Sundays.</label>
+                {withAttendance && <label className="ml-6 flex items-center gap-2 text-slate-600"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={overwrite} onChange={(e) => setOverwrite(e.target.checked)} />Overwrite attendance already marked in the app</label>}
+              </>
+            ) : (
+              <p className="text-xs text-slate-500">This sheet has no daily attendance columns: attendance already marked in the app is not changed.</p>
+            )}
           </div>
 
           <div className="mt-4 max-h-64 overflow-auto rounded-xl border border-slate-200">
