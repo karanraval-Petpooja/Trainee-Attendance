@@ -713,7 +713,10 @@ export default function TraineesPage() {
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training'
     : notJoining(t) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
   // Status filter: a group (In training, Ended…) or one Training Status value ("exit:resigned")
+  const isOverdue = (t) => !t.deleted_at && t.status === 'active' && traineeActiveOn(t, now.date)
+    && !t.tcd_lwd && t.probable_handover_date && t.probable_handover_date < now.date;
   const inView = (t) => (show === 'all' ? !t.deleted_at
+    : show === 'overdue' ? isOverdue(t)
     : show === 'retraining' ? !t.deleted_at && t.status === 'active' && isRetraining(t)
     : show.startsWith('exit:') ? !t.deleted_at && t.status === 'active' && t.exit_reason === show.slice(5)
       : stage(t) === show);
@@ -880,6 +883,15 @@ export default function TraineesPage() {
             .sort((a, b) => (a[0] < b[0] ? 1 : -1))
             .map(([d, n]) => <option key={d} value={d}>DOJ {fmtMedium(d)} ({n})</option>)}
         </select>
+        <select className="input sm:w-44" value={batchFilter} onChange={(e) => { setBatchFilter(e.target.value); clearSelection(); }} aria-label="Batch">
+          <option value="all">All batches</option>
+          {trainees.some((t) => !t.deleted_at && !t.batch_id) && <option value="none">No batch</option>}
+          {[...batches].sort((a, b) => (a.status === b.status ? (b.start_date || '').localeCompare(a.start_date || '') || b.code.localeCompare(a.code, undefined, { numeric: true }) : a.status === 'active' ? -1 : 1))
+            .map((b) => {
+              const n = trainees.filter((t) => t.batch_id === b.id && inView(t) && (trainerFilter === 'all' || t.trainer_id === trainerFilter)).length;
+              return <option key={b.id} value={b.id}>{b.code}{b.status === 'closed' ? ' (closed)' : ''} ({n})</option>;
+            })}
+        </select>
         {isManager && (
           <select className="input sm:w-52" value={trainerFilter} onChange={(e) => setTrainerFilter(e.target.value)} aria-label="Trainer">
             <option value="all">All trainers</option>
@@ -888,6 +900,7 @@ export default function TraineesPage() {
         )}
         <select className="input sm:w-56" value={show} onChange={(e) => setShow(e.target.value)} aria-label="Status filter">
           <option value="training">In training ({counts.training || 0})</option>
+          <option value="overdue">Overdue: past probable handover ({trainees.filter(isOverdue).length})</option>
           <option value="upcoming">Joining soon ({counts.upcoming || 0})</option>
           <option value="done">Handed over / ended ({counts.done || 0})</option>
           <optgroup label="By training status">
@@ -955,7 +968,7 @@ export default function TraineesPage() {
                         const left = Math.round((Date.parse(t.probable_handover_date) - Date.parse(now.date)) / 86400000);
                         return (
                           <div className={`text-xs font-semibold ${left < 0 ? 'text-red-600' : left <= 7 ? 'text-amber-700' : 'text-slate-400'}`}>
-                            Probable {fmtMedium(t.probable_handover_date)}{left < 0 ? ' · overdue' : left === 0 ? ' · today' : left <= 7 ? ` · in ${left} day${left === 1 ? '' : 's'}` : ''}
+                            Probable {fmtMedium(t.probable_handover_date)}{left < 0 ? ` · overdue by ${-left} day${left === -1 ? '' : 's'}` : left === 0 ? ' · today' : left <= 7 ? ` · in ${left} day${left === 1 ? '' : 's'}` : ''}
                           </div>
                         );
                       })()}
