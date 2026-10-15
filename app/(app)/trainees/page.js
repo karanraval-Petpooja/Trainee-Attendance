@@ -922,14 +922,14 @@ export default function TraineesPage() {
           <span className="font-semibold">{selected.size} selected</span>
           <button onClick={clearSelection} className="rounded-lg p-1 text-ink-200 hover:bg-white/10" aria-label="Clear selection"><X size={16} /></button>
           <div className="ml-auto flex flex-wrap gap-2">
-            <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('inactive')}><UserX size={14} />Remove from attendance</button>
+            {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('inactive')}><UserX size={14} />Remove from attendance</button>}
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setSwitchItems({ items: selectedRows })}><Repeat size={14} />Switch trainer</button>
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => undoSwitch(selectedRows)}><Undo2 size={14} />Undo switch</button>}
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setMoveItems(selectedRows)}><Layers size={14} />Move to batch</button>
-            <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('active')}><UserCheck size={14} />Restore</button>
+            {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('active')}><UserCheck size={14} />Restore</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'handover' })}><ArrowRightLeft size={14} />Handover</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'return' })}><RotateCcw size={14} />Bring back for training</button>}
-            {show !== 'deleted' && show !== 'inactive' && <button className="btn btn-sm bg-red-600 text-white hover:bg-red-700" onClick={() => setConfirmDelete(selectedRows)}><Trash2 size={14} />Delete</button>}
+            {isManager && show !== 'deleted' && show !== 'inactive' && <button className="btn btn-sm bg-red-600 text-white hover:bg-red-700" onClick={() => setConfirmDelete(selectedRows)}><Trash2 size={14} />Delete</button>}
             {isManager && (show === 'deleted' || show === 'inactive') && <button className="btn btn-sm bg-red-700 text-white hover:bg-red-800" onClick={() => setPermanent(selectedRows)}><Trash2 size={14} />Delete permanently</button>}
           </div>
         </div>
@@ -990,10 +990,12 @@ export default function TraineesPage() {
                           ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
                           : <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'return' })} title="Bring back for training"><RotateCcw size={14} />Bring back</button>)}
                         <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>
-                        <button className="btn-ghost btn-sm" onClick={() => toggle(t)} aria-label={t.status === 'active' ? `Remove ${t.name}` : `Restore ${t.name}`} title={t.status === 'active' ? 'Remove from attendance' : 'Restore'}>
-                          {t.status === 'active' ? <UserX size={14} className="text-red-600" /> : <UserCheck size={14} className="text-emerald-600" />}
-                        </button>
-                        {!t.deleted_at && <button className="btn-ghost btn-sm" onClick={() => setConfirmDelete([t])} aria-label={`Delete ${t.name}`} title="Delete (reports are kept)"><Trash2 size={14} className="text-red-600" /></button>}
+                        {isManager && (
+                          <button className="btn-ghost btn-sm" onClick={() => toggle(t)} aria-label={t.status === 'active' ? `Remove ${t.name}` : `Restore ${t.name}`} title={t.status === 'active' ? 'Remove from attendance' : 'Restore'}>
+                            {t.status === 'active' ? <UserX size={14} className="text-red-600" /> : <UserCheck size={14} className="text-emerald-600" />}
+                          </button>
+                        )}
+                        {isManager && !t.deleted_at && <button className="btn-ghost btn-sm" onClick={() => setConfirmDelete([t])} aria-label={`Delete ${t.name}`} title="Delete (reports are kept)"><Trash2 size={14} className="text-red-600" /></button>}
                       </div>
                     </td>
                   </tr>
