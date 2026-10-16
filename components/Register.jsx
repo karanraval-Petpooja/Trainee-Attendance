@@ -69,9 +69,21 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
       if (date < first) return { rank: 2, label: `Joins ${fmtMedium(first)}`, tone: 'bg-sky-100 text-sky-800' };
       return { rank: 3, label: 'Not in training this day', tone: 'bg-slate-100 text-slate-700' };
     };
-    const outList = outs.map((t) => ({ t, ...why(t) }))
+    // Only trainees connected to THIS day: marked that day, their training covered that day,
+    // or it started / ended within the 7 days before it. Old batches and future joiners are left out.
+    const weekBefore = addDays(date, -7);
+    const relevant = (t) => {
+      if (records[t.id]) return true;
+      return periodsOf(t).some((p) => {
+        const start = p.start || t.joining_date;
+        const end = p.end || (notJoiningReason(p.reason) ? start : null); // not joining, no date: just the joining day
+        const covers = start <= date && (!end || end >= date);
+        return covers || (end && end >= weekBefore && end < date) || (start >= weekBefore && start <= date);
+      });
+    };
+    const outList = outs.filter(relevant).map((t) => ({ t, ...why(t) }))
       .sort((a, b) => a.rank - b.rank || (b.t.tcd_lwd || '').localeCompare(a.t.tcd_lwd || '') || a.t.name.localeCompare(b.t.name));
-    return { active: act, outside: out, outList };
+    return { active: act, outside: outList.length, outList };
   }, [trainees, date, records, trainerNames]);
 
   const isLocked = (t) => profile.role === 'trainer' && records[t.id] && date < lockBefore;
