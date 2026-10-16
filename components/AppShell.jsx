@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, Settings, UserCircle, Users, X, Contact,
+  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -23,7 +23,7 @@ const REPORTS = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
 const TRAINER_GROUPS = [
-  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
+  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, { href: '/feedback', label: 'NHT Feedback Form', icon: QrCode }] },
   { id: 'attendance', title: 'Attendance', items: [
     { href: '/attendance', label: 'Mark Attendance', icon: CheckCircle2 },
     { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
@@ -42,7 +42,7 @@ const TRAINER_GROUPS = [
   ] },
 ];
 const MANAGER_GROUPS = [
-  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
+  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, { href: '/feedback', label: 'NHT Feedback Form', icon: QrCode }] },
   { id: 'attendance', title: 'Attendance', items: [
     { href: '/attendance', label: 'Attendance Register', icon: CheckCircle2 },
     { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },

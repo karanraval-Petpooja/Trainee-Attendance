@@ -7,6 +7,7 @@ import { useAlerts, useAttendance, useTrainees } from '@/lib/hooks';
 import { useApp } from '../AppShell';
 import { RegisterList, RegisterModal } from '../Register';
 import { PageLoader, StatCard } from '../ui';
+import NhtFeedbackShare from '../NhtFeedbackShare';
 
 export default function TrainerDashboard() {
   const { profile, settings, now, notifications } = useApp();
@@ -34,6 +35,11 @@ export default function TrainerDashboard() {
   }, [trainees, byTrainee, monthStart, today, settings, now]);
 
   const refresh = () => { reloadAtt(); reloadAlerts(); };
+  // Training ending (handover in the next 3 days or the last 3 days): time to collect NHT feedback
+  const ending = trainees.filter((t) => {
+    const d = (t.exit_reason === 'handover' && t.tcd_lwd) || (!t.exit_reason && t.probable_handover_date) || null;
+    return d && d >= addDays(today, -3) && d <= addDays(today, 3);
+  });
   if (loading) return <PageLoader />;
 
   return (
@@ -42,6 +48,16 @@ export default function TrainerDashboard() {
         <h1 className="text-2xl font-bold tracking-tight sm:text-[28px]">Hello, {profile.name.split(' ')[0]}</h1>
         <p className="mt-1 text-sm text-slate-500">Mark your trainees’ attendance before {fmtClock(settings.attendance_deadline)} every working day.</p>
       </div>
+
+      {ending.length > 0 && (
+        <section className="panel border-ink-200 p-5">
+          <div className="mb-3">
+            <div className="text-sm font-bold text-ink-900">Training ending: collect NHT feedback</div>
+            <p className="mt-0.5 text-xs text-slate-500">{ending.length} trainee{ending.length === 1 ? '' : 's'} finish{ending.length === 1 ? 'es' : ''} training around now: {ending.slice(0, 6).map((t) => t.name).join(', ')}{ending.length > 6 ? ` +${ending.length - 6} more` : ''}. Share the feedback form with them.</p>
+          </div>
+          <NhtFeedbackShare compact />
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
         <StatCard label="Trainees in training" value={inTraining} hint={`${trainees.length} on your list`} />
