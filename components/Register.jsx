@@ -2,8 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock, Search } from 'lucide-react';
 import { sb } from '@/lib/supabase';
-import { addDays, fmtClock, fmtLong, fmtTime } from '@/lib/dates';
-import { MARK_OPTIONS, notJoining, outOfScope, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
+import { addDays, fmtClock, fmtLong, fmtMedium, fmtTime } from '@/lib/dates';
+import { EXIT_LABELS, MARK_OPTIONS, notJoining, notJoiningReason, outOfScope, periodsOf, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
 import { useApp } from './AppShell';
 import { ErrorText, Modal, PageLoader, Spinner } from './ui';
 
@@ -47,14 +47,32 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
   }, [date, idKey]);
   useEffect(() => { load(); }, [load]);
 
-  const { active, outside } = useMemo(() => {
+  const [showOut, setShowOut] = useState(false);
+  const { active, outside, outList } = useMemo(() => {
     const act = [];
     let out = 0;
+    const outs = [];
     // In training that day, or already has an entry that day (kept visible to fix it) — except "not joining"
     // statuses (Resigned, Offer Revoked, Drop Out…): they never appear, even with an old entry.
-    trainees.forEach((t) => (!outOfScope(t, date) && (traineeActiveOn(t, date) || (records[t.id] && !notJoining(t))) ? act.push(t) : (out += 1)));
-    return { active: act, outside: out };
-  }, [trainees, date, records]);
+    trainees.forEach((t) => {
+      if (!outOfScope(t, date) && (traineeActiveOn(t, date) || (records[t.id] && !notJoining(t)))) act.push(t);
+      else { out += 1; outs.push(t); }
+    });
+    // why each one is not on the register this day (most relevant first)
+    const why = (t) => {
+      const ps = periodsOf(t);
+      const first = ps[0]?.start || t.joining_date;
+      if (outOfScope(t, date)) return { rank: 3, label: `With ${trainerNames?.[trainerOn(t, date)] || 'another trainer'}`, tone: 'bg-slate-100 text-slate-700' };
+      if (t.status !== 'active') return { rank: 4, label: 'Removed from attendance', tone: 'bg-slate-100 text-slate-700' };
+      if (notJoiningReason(t.exit_reason)) return { rank: 0, label: `${EXIT_LABELS[t.exit_reason]}${t.tcd_lwd ? ` · ${fmtMedium(t.tcd_lwd)}` : ''}`, tone: 'bg-red-100 text-red-800' };
+      if (t.exit_reason === 'handover' && t.tcd_lwd && date > t.tcd_lwd) return { rank: 1, label: `Handover · ${fmtMedium(t.tcd_lwd)}`, tone: 'bg-emerald-100 text-emerald-800' };
+      if (date < first) return { rank: 2, label: `Joins ${fmtMedium(first)}`, tone: 'bg-sky-100 text-sky-800' };
+      return { rank: 3, label: 'Not in training this day', tone: 'bg-slate-100 text-slate-700' };
+    };
+    const outList = outs.map((t) => ({ t, ...why(t) }))
+      .sort((a, b) => a.rank - b.rank || (b.t.tcd_lwd || '').localeCompare(a.t.tcd_lwd || '') || a.t.name.localeCompare(b.t.name));
+    return { active: act, outside: out, outList };
+  }, [trainees, date, records, trainerNames]);
 
   const isLocked = (t) => profile.role === 'trainer' && records[t.id] && date < lockBefore;
   const valueOf = (t) => draft[t.id] ?? records[t.id]?.status ?? null;
@@ -170,7 +188,29 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
         })}
       </ul>
 
-      {outside > 0 && <p className="mt-2 text-xs text-slate-400">{outside} trainee{outside === 1 ? ' is' : 's are'} not on this register for this date (before DOJ, handed over, or with another trainer).</p>}
+      {outside > 0 && (
+        <div className="mt-2">
+          <button type="button" onClick={() => setShowOut((v) => !v)} className="text-xs font-semibold text-ink-700 hover:underline">
+            {outside} trainee{outside === 1 ? ' is' : 's are'} not on this register for this date · {showOut ? 'Hide' : 'Show who and why'}
+          </button>
+          {showOut && (
+            <ul className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+              {outList.map(({ t, label, tone }) => (
+                <li key={t.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-medium text-slate-800">{t.name}</div>
+                    <div className="text-xs text-slate-400">
+                      {[t.employee_code, t._batch?.code].filter(Boolean).join(' · ')}
+                      {records[t.id] ? ` · marked ${STATUS[records[t.id].status]?.short || records[t.id].status} this day (kept in History and the HR sheet)` : ''}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${tone}`}>{label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       {profile.role === 'trainer' && date < lockBefore && Object.keys(records).length > 0 && (
         <p className="mt-1 text-xs text-slate-400">Saved entries older than {settings.edit_window_days} days are locked. Ask your manager to change them.</p>
       )}
