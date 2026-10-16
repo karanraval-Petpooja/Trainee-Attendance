@@ -10,6 +10,7 @@ import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
 import Logo from './Logo';
 import NotificationBell from './NotificationBell';
+import { InstallButton, IosInstallTip } from './PwaSetup';
 import { ErrorText, PageLoader } from './ui';
 
 const Ctx = createContext(null);
@@ -215,6 +216,7 @@ export default function AppShell({ children }) {
 
   return (
     <Ctx.Provider value={value}>
+      <IosInstallTip />
       <div className="min-h-screen">
         {navOpen && <div className="fixed inset-0 z-40 bg-ink-900/40 lg:hidden" onClick={() => setNavOpen(false)} />}
         <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-ink-900 text-ink-100 transition-transform lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -274,6 +276,7 @@ export default function AppShell({ children }) {
               <div className="truncate font-display text-base font-bold text-ink-900">{title}</div>
               <div className="hidden items-center gap-1.5 text-xs text-slate-500 sm:flex"><CalendarDays size={12} />{fmtLong(now.date)}</div>
             </div>
+            <InstallButton />
             <Link href="/feedback" title="NHT Feedback Form: share the QR / link with trainees"
               className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${pathname === '/feedback' ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-ink-800 hover:border-slate-300 hover:bg-slate-50'}`}>
               <QrCode size={16} /><span className="hidden sm:inline">NHT Feedback</span>
