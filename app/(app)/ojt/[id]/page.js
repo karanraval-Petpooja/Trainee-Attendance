@@ -1,14 +1,48 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, BarChart3, FileSpreadsheet, Search, Trash2 } from 'lucide-react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, BarChart3, FileSpreadsheet, Search, Send, Trash2 } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
-import { Empty, PageHeader, PageLoader, StatCard } from '@/components/ui';
+import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner, StatCard } from '@/components/ui';
 import { useTrainers } from '@/lib/hooks';
-import { sb } from '@/lib/supabase';
+import { authFetch, sb } from '@/lib/supabase';
 import { fmtMedium } from '@/lib/dates';
 import { downloadOjtWorkbook, fmtDuration, hasScores, summarizeOjt } from '@/lib/ojt';
+
+// Upskill / Refresher → Training Log Google Sheet (one row per participant; Sr. No continues per trainer)
+function PushToSheet({ session, rows, trainerName, onClose, onDone }) {
+  const [topic, setTopic] = useState(session.topic || session.title || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const done = rows.filter((r) => r.attendance === 'P').length;
+  const push = async () => {
+    if (topic.trim().length < 2) { setError('Write the topic of the session.'); return; }
+    setBusy(true); setError('');
+    try {
+      const j = await authFetch('/api/training-log', { method: 'POST', body: JSON.stringify({ sessionId: session.id, topic: topic.trim() }) });
+      if (!j.ok) throw new Error(j.error || 'Could not push to the sheet');
+      onDone(j, topic.trim());
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  };
+  return (
+    <Modal title="Push to training sheet" onClose={onClose}
+      footer={<><button className="btn-secondary" onClick={onClose}>Later</button><button className="btn-primary" onClick={push} disabled={busy}>{busy ? <Spinner size={16} /> : <Send size={16} />}Push {rows.length} rows</button></>}>
+      <label className="label" htmlFor="tl-topic">Topic</label>
+      <input id="tl-topic" className="input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="What was this session about?" autoFocus />
+      <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl bg-slate-50 p-3 text-sm">
+        <dt className="text-slate-500">Course type</dt><dd className="font-semibold">{session.session_type}</dd>
+        <dt className="text-slate-500">Trainer Name</dt><dd className="font-semibold">{trainerName || '—'}</dd>
+        <dt className="text-slate-500">Date</dt><dd className="font-semibold">{fmtMedium(session.session_date)}</dd>
+        <dt className="text-slate-500">Completion Status</dt><dd className="font-semibold">{done} Completed · {rows.length - done} Not Completed</dd>
+      </dl>
+      <p className="mt-3 text-xs text-slate-500">One row per participant. Sr. No continues from this trainer’s last number in the sheet. Location, Location Type (Ahmedabad / Outside Ahmedabad), Designation and Department come from Contact Details. Rows already in the sheet are not added again.</p>
+      {session.pushed_at && <p className="mt-2 text-xs font-semibold text-emerald-700">Already pushed on {fmtMedium(session.pushed_at.slice(0, 10))}{session.pushed_sr ? ` (Sr. No ${session.pushed_sr})` : ''}. Pushing again only adds missing rows.</p>}
+      <div className="mt-3"><ErrorText>{error}</ErrorText></div>
+    </Modal>
+  );
+}
 
 const chip = { P: 'bg-emerald-100 text-emerald-800', A: 'bg-red-600 text-white', Pass: 'bg-emerald-100 text-emerald-800', Fail: 'bg-red-100 text-red-800', Absent: 'bg-amber-100 text-amber-800' };
 
@@ -21,6 +55,8 @@ export default function OjtSessionPage() {
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
+  const [pushOpen, setPushOpen] = useState(false);
+  const search = useSearchParams();
 
   useEffect(() => {
     (async () => {
@@ -31,12 +67,18 @@ export default function OjtSessionPage() {
     })();
   }, [id]);
 
+  // straight after an Upskill / Refresher upload: offer the push automatically
+  useEffect(() => {
+    if (session && search.get('push') === '1' && ['upskill', 'refresher'].includes(String(session.session_type || '').toLowerCase()) && !session.pushed_at) setPushOpen(true);
+  }, [session, search]);
   const sum = useMemo(() => summarizeOjt(rows), [rows]);
   const scored = useMemo(() => hasScores(rows), [rows]);
   if (session === null) return <PageLoader />;
   if (session === false) return <Empty title="Session not found" />;
 
   const trainer = trainers.find((t) => t.id === session.trainer_id);
+  const canPush = ['upskill', 'refresher'].includes(String(session.session_type || '').toLowerCase())
+    && (profile.role === 'manager' || session.trainer_id === profile.id || session.created_by === profile.id);
   const canDelete = profile.role === 'manager' || session.created_by === profile.id;
   const shown = rows.filter((r) => (filter === 'all' || r.attendance === filter || r.result === filter)
     && [r.full_name, r.email].some((v) => v?.toLowerCase().includes(q.toLowerCase())));
@@ -56,6 +98,11 @@ export default function OjtSessionPage() {
         subtitle={`${fmtMedium(session.session_date)}${trainer ? ` · ${trainer.name}` : ''}${session.department ? ` · ${session.department}` : ''}${session.session_minutes ? ` · session ${fmtDuration(session.session_minutes)}` : ''}${session.min_present_minutes ? ` · Present needs ${fmtDuration(session.min_present_minutes)}` : ''}${session.source_file ? ` · ${session.source_file}` : ''}`}
         actions={(
           <>
+            {canPush && (
+              <button className={session.pushed_at ? 'btn-secondary' : 'btn-primary'} onClick={() => setPushOpen(true)}>
+                <Send size={16} />{session.pushed_at ? `Pushed${session.pushed_sr ? ` · Sr. ${session.pushed_sr}` : ''}` : 'Push to training sheet'}
+              </button>
+            )}
             <Link href={`/ojt/charts?session=${session.id}`} className="btn-secondary"><BarChart3 size={16} />Charts</Link>
             <button className="btn-primary" onClick={() => downloadOjtWorkbook(rows, `${session.title.replace(/[^a-z0-9]+/gi, '_')}_${session.session_date}.xlsx`)}><FileSpreadsheet size={16} />Download Excel</button>
             {canDelete && <button className="btn-ghost" onClick={remove} aria-label="Delete session"><Trash2 size={16} className="text-red-600" /></button>}
@@ -108,6 +155,15 @@ export default function OjtSessionPage() {
           </table>
         </div>
       </div>
+      {pushOpen && (
+        <PushToSheet session={session} rows={rows} trainerName={trainer?.name || (session.trainer_id === profile.id ? profile.name : '')}
+          onClose={() => setPushOpen(false)}
+          onDone={(j, topic) => {
+            setPushOpen(false);
+            setSession({ ...session, topic, pushed_at: new Date().toISOString(), pushed_sr: j.added ? `${j.from}–${j.to}` : session.pushed_sr });
+            showToast(j.added ? `Pushed ${j.added} rows to “${j.tab}” (Sr. No ${j.from}–${j.to})${j.skipped ? `, ${j.skipped} already there` : ''}.` : `Nothing new: all ${j.skipped} rows are already in the sheet.`);
+          }} />
+      )}
     </div>
   );
 }

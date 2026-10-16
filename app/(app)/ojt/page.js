@@ -82,7 +82,7 @@ export default function OjtPage() {
           </div>
         )}
       </div>
-      {upload && <OjtUpload trainers={trainers} onClose={() => setUpload(false)} onSaved={(id) => { showToast('Session saved.'); router.push(`/ojt/${id}`); }} />}
+      {upload && <OjtUpload trainers={trainers} onClose={() => setUpload(false)} onSaved={(id) => { showToast('Session saved.'); router.push(`/ojt/${id}?push=1`); }} />}
     </div>
   );
 }

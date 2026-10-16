@@ -25,7 +25,7 @@
  *     every CONTACTS.REFRESH_EVERY_HOURS hours; the app's Contact Details page also has a Refresh button.
  *  To stop the automatic sync: choose "removeTrigger" → Run.
  */
-const SCRIPT_VERSION = '2026-10-15 real-dates-v4'; // shown in the log, so you can see which code is running
+const SCRIPT_VERSION = '2026-10-16 training-log-v5'; // shown in the log, so you can see which code is running
 
 const CONFIG = {
   APP_URL: 'https://YOUR-APP.vercel.app',           // your deployed app address (not localhost)
@@ -49,6 +49,11 @@ const CONFIG = {
 
   // Contact Details sheet → app (employee list with departments, used for "Not attended" in sessions)
   // and for filling missing E Codes. YOUR Google account needs view access. Empty SHEET_ID = off.
+  // Training Log sheet: Upskill / Refresher sessions pushed from the app (Push to training sheet)
+  TRAINING_LOG: {
+    SHEET_ID: '14w9Ahgbxw732KaR6SuGtSzcZHP8CAHS6j4lQs1kbhKI',
+    TAB_GID: 1134105869,                           // the tab from the link (…#gid=1134105869)
+  },
   CONTACTS: {
     SHEET_ID: '1FDODawNLYPxIp9PdJm8NDHFrEBbOKGZcOwS7WkDZOt4', // Contact Details sheet
     TAB_GID: '',                                    // optional: tab ID from the link (…#gid=…); empty = use TAB_NAME
@@ -72,7 +77,12 @@ function doGet(e) {
   var out;
   if (!e || !e.parameter || e.parameter.key !== CONFIG.SYNC_SECRET) out = { ok: false, error: 'Wrong key' };
   else {
-    try { out = e.parameter.action === 'contacts' ? syncContacts() : syncDossier(); } catch (err) { out = { ok: false, error: String(err && err.message || err) }; }
+    try {
+      const action = e.parameter.action;
+      if (action === 'contacts') out = syncContacts();
+      else if (action === 'trainingLog') out = pushTrainingLog_(JSON.parse((e.postData && e.postData.contents) || '{}'));
+      else out = syncDossier();
+    } catch (err) { out = { ok: false, error: String(err && err.message || err) }; }
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -161,6 +171,93 @@ function realDates_(range, tz) {
     }
   }
   return shown;
+}
+
+// ---------------------------------------------------------------------------
+// Training Log: one row per participant. Sr. No continues per trainer (Karan Raval's last is 50 → 51, 52…).
+// Columns are found by their headings: Sr. No, Date, Month, Name, Mail Id, Location, Location Type,
+// Designation, Department, Course type, Topic, Completion Status, Trainer Name.
+// Rows already in the sheet (same date + mail/name + topic + trainer) are not added again.
+// A tab named exactly like the trainer is used if it exists; otherwise the TAB_GID tab.
+// ---------------------------------------------------------------------------
+function pushTrainingLog_(body) {
+  const c = CONFIG.TRAINING_LOG;
+  if (!c || !c.SHEET_ID) throw new Error('Fill CONFIG.TRAINING_LOG.SHEET_ID first.');
+  if (!body || !body.rows || !body.rows.length) throw new Error('No rows to push.');
+  const book = SpreadsheetApp.openById(c.SHEET_ID);
+  const tabs = book.getSheets();
+  const norm = function (x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]/g, ''); };
+  const sheet = tabs.filter(function (t) { return norm(t.getName()) === norm(body.trainer); })[0]
+    || tabs.filter(function (t) { return String(t.getSheetId()) === String(c.TAB_GID); })[0]
+    || tabs[0];
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  const width = Math.max(sheet.getLastColumn(), 13);
+  const values = sheet.getRange(1, 1, lastRow, width).getValues();
+  // heading row: has "Sr. No" and "Trainer Name"
+  var h = -1;
+  for (var r = 0; r < Math.min(10, values.length) && h < 0; r++) {
+    const cells = values[r].map(norm);
+    if (cells.indexOf('srno') >= 0 && cells.indexOf('trainername') >= 0) h = r;
+  }
+  if (h < 0) throw new Error('No heading row with "Sr. No" and "Trainer Name" in tab "' + sheet.getName() + '".');
+  const heads = values[h].map(norm);
+  const col = function () { for (var i = 0; i < arguments.length; i++) { const k = heads.indexOf(arguments[i]); if (k >= 0) return k; } return -1; };
+  const C = {
+    sr: col('srno', 'srnumber', 'sno'), date: col('date'), month: col('month'), name: col('name', 'employeename'),
+    mail: col('mailid', 'email', 'emailid', 'mail'), location: col('location'), locType: col('locationtype'),
+    designation: col('designation'), department: col('department'), course: col('coursetype', 'course'),
+    topic: col('topic'), status: col('completionstatus', 'status'), trainer: col('trainername', 'trainer'),
+  };
+  const tz = book.getSpreadsheetTimeZone();
+  const dayKey = function (v) { return v instanceof Date ? Utilities.formatDate(v, tz, 'yyyy-MM-dd') : String(v || '').trim(); };
+  const tKey = norm(body.trainer);
+  var maxSr = 0; var lastUsed = h + 1; var monthSample = null;
+  const seen = {};
+  for (var r2 = h + 1; r2 < values.length; r2++) {
+    const row = values[r2];
+    if (String(row[C.name] || '').trim() || String(row[C.sr] || '').trim()) lastUsed = r2 + 1;
+    if (C.trainer >= 0 && norm(row[C.trainer]) === tKey) {
+      const n = parseInt(row[C.sr], 10);
+      if (!isNaN(n) && n > maxSr) maxSr = n;
+      seen[[dayKey(row[C.date]), norm(row[C.mail] || row[C.name]), norm(row[C.topic])].join('|')] = true;
+    }
+    if (C.month >= 0 && row[C.month] !== '' && row[C.month] !== null) monthSample = row[C.month];
+  }
+  // Date and Month written like the rows already there
+  const p = String(body.date).split('-');
+  const day = new Date(+p[0], +p[1] - 1, +p[2]);
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  var month;
+  if (monthSample instanceof Date) month = new Date(+p[0], +p[1] - 1, 1);
+  else {
+    const m = MONTHS[+p[1] - 1]; const sample = String(monthSample || '');
+    if (/^[A-Za-z]{3}$/.test(sample)) month = m.slice(0, 3);
+    else if (/^[A-Za-z]{3}[-\s']\d{2}$/.test(sample)) month = m.slice(0, 3) + sample.charAt(3) + p[0].slice(2);
+    else if (/^[A-Za-z]+[-\s]\d{4}$/.test(sample)) month = m + sample.match(/[-\s]/)[0] + p[0];
+    else month = m;
+  }
+  const out = [];
+  var sr = maxSr; var skipped = 0;
+  body.rows.forEach(function (x) {
+    const key = [Utilities.formatDate(day, tz, 'yyyy-MM-dd'), norm(x.mail || x.name), norm(body.topic)].join('|');
+    if (seen[key]) { skipped++; return; }
+    seen[key] = true;
+    sr++;
+    const line = new Array(width).fill('');
+    const put = function (k, v) { if (C[k] >= 0) line[C[k]] = v; };
+    put('sr', sr); put('date', day); put('month', month); put('name', x.name); put('mail', x.mail);
+    put('location', x.location); put('locType', x.locationType); put('designation', x.designation);
+    put('department', x.department); put('course', body.course); put('topic', body.topic);
+    put('status', x.completion); put('trainer', body.trainer);
+    out.push(line);
+  });
+  if (out.length) {
+    const start = lastUsed + 1;
+    if (sheet.getMaxRows() < start + out.length - 1) sheet.insertRowsAfter(sheet.getMaxRows(), start + out.length - 1 - sheet.getMaxRows());
+    if (lastUsed > h + 1) sheet.getRange(lastUsed, 1, 1, width).copyFormatToRange(sheet, 1, width, start, start + out.length - 1);
+    sheet.getRange(start, 1, out.length, width).setValues(out);
+  }
+  return { ok: true, added: out.length, skipped: skipped, from: out.length ? maxSr + 1 : null, to: out.length ? sr : null, tab: sheet.getName() };
 }
 
 function contactsTab_(c) {
