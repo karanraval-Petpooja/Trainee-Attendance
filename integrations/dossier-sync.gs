@@ -25,7 +25,7 @@
  *     every CONTACTS.REFRESH_EVERY_HOURS hours; the app's Contact Details page also has a Refresh button.
  *  To stop the automatic sync: choose "removeTrigger" → Run.
  */
-const SCRIPT_VERSION = '2026-10-16 training-log-v5'; // shown in the log, so you can see which code is running
+const SCRIPT_VERSION = '2026-10-16 no-dossier-sync-v6'; // shown in the log, so you can see which code is running
 
 const CONFIG = {
   APP_URL: 'https://YOUR-APP.vercel.app',           // your deployed app address (not localhost)
@@ -66,7 +66,13 @@ const CONFIG = {
   ROWS_PER_REQUEST: 60,
 };
 
+// The Dossier Google Sheet sync is SWITCHED OFF: trainees are updated only by uploading the Dossier file
+// in the app (Trainees & Batches → Upload Dossier sheet). This script is kept for Contact Details and the
+// Training Log push. Set DOSSIER_SYNC_ON to true only if you ever want the automatic Dossier sync back.
+const DOSSIER_SYNC_ON = false;
+
 function syncDossier() {
+  if (!DOSSIER_SYNC_ON) return { ok: false, error: 'The Dossier sync is switched off. Upload the Dossier file in the app instead.' };
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return { ok: true, busy: true, message: 'A sync is already running. Try again in a minute.' };
   try { return runSync_(); } finally { lock.releaseLock(); }
@@ -81,7 +87,7 @@ function doGet(e) {
       const action = e.parameter.action;
       if (action === 'contacts') out = syncContacts();
       else if (action === 'trainingLog') out = pushTrainingLog_(JSON.parse((e.postData && e.postData.contents) || '{}'));
-      else out = syncDossier();
+      else out = { ok: false, error: 'Unknown action. This script serves Contact Details (action=contacts) and the Training Log (action=trainingLog).' };
     } catch (err) { out = { ok: false, error: String(err && err.message || err) }; }
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
@@ -353,6 +359,7 @@ function readContactCodes() {
 // App → Dossier: attendance marked in the app, RAG and RAG Remarks
 // ---------------------------------------------------------------------------
 function writeBackToDossier() {
+  if (!DOSSIER_SYNC_ON) return;
   const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/dossier-export?days=' + CONFIG.WRITE_BACK_DAYS, {
     headers: { 'x-sync-secret': CONFIG.SYNC_SECRET }, muteHttpExceptions: true,
   });
@@ -463,9 +470,9 @@ function dayNumber(startIso, dateIso) {
 
 function createTrigger() {
   removeTrigger();
-  ScriptApp.newTrigger('syncDossier').timeBased().everyHours(CONFIG.SYNC_EVERY_HOURS).create();
+  if (DOSSIER_SYNC_ON) ScriptApp.newTrigger('syncDossier').timeBased().everyHours(CONFIG.SYNC_EVERY_HOURS).create();
   if (CONFIG.CONTACTS && CONFIG.CONTACTS.SHEET_ID) ScriptApp.newTrigger('syncContacts').timeBased().everyHours(CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6).create();
-  Logger.log('Automatic sync is on: Dossier every ' + CONFIG.SYNC_EVERY_HOURS + ' hour(s), Contact Details every ' + (CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6) + ' hour(s).');
+  Logger.log('Automatic refresh: Contact Details every ' + (CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6) + ' hour(s).' + (DOSSIER_SYNC_ON ? ' Dossier every ' + CONFIG.SYNC_EVERY_HOURS + ' hour(s).' : ' Dossier sync: off (upload the file in the app).'));
 }
 
 function removeTrigger() {

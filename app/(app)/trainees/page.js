@@ -11,7 +11,6 @@ import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, pe
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
-import SyncNowButton from '@/components/SyncNowButton';
 
 const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
@@ -788,7 +787,6 @@ export default function TraineesPage() {
       <PageHeader title={isManager ? 'Trainees & batches' : 'My trainees & batches'} subtitle={`${counts.training || 0} in training today`}
         actions={(
           <>
-            <SyncNowButton onDone={reload} />
             {isManager && <button className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
