@@ -32,11 +32,15 @@ export async function POST(req) {
     const { data: s } = await a.from('ojt_sessions').select('*').eq('id', body.sessionId).single();
     if (!s) throw httpError(404, 'Session not found');
     if (me.role !== 'manager' && s.trainer_id !== me.id && s.created_by !== me.id) throw httpError(403, 'Only the session trainer or a manager can push this session.');
+    if (s.pushed_at) throw httpError(409, `Already pushed to the Training Log on ${String(s.pushed_at).slice(0, 10)}${s.pushed_sr ? ` (Sr. No ${s.pushed_sr})` : ''}. A session can be pushed once.`);
     const course = COURSE[low(s.session_type)];
     if (!course) throw httpError(400, 'Only Upskill and Refresher sessions go to the training sheet.');
 
-    const { data: parts } = await a.from('ojt_participants').select('*').eq('session_id', s.id).order('full_name');
-    if (!parts?.length) throw httpError(400, 'This session has no participants.');
+    const { data: all } = await a.from('ojt_participants').select('*').eq('session_id', s.id).order('full_name');
+    // only the participants the trainer ticked
+    const ids = Array.isArray(body.participantIds) ? new Set(body.participantIds.map(String)) : null;
+    const parts = (all || []).filter((p) => !ids || ids.has(String(p.id)));
+    if (!parts.length) throw httpError(400, 'Tick at least one participant to push.');
     const { data: tr } = await a.from('profiles').select('name').eq('id', s.trainer_id || s.created_by).single();
     const trainerName = tr?.name || me.name || '';
 
@@ -80,8 +84,8 @@ export async function POST(req) {
 
     await a.from('ojt_sessions').update({
       topic, pushed_at: new Date().toISOString(), pushed_by: me.id,
-      pushed_rows: (s.pushed_rows || 0) + out.added,
-      pushed_sr: out.added ? `${out.from}–${out.to}` : s.pushed_sr,
+      pushed_rows: out.added,
+      pushed_sr: out.added ? `${out.from}–${out.to}` : null,
     }).eq('id', s.id);
     return Response.json(out);
   } catch (e) {
