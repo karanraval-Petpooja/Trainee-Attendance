@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { Copy, Download, RefreshCw } from 'lucide-react';
-import { sb } from '@/lib/supabase';
+import { authFetch, sb } from '@/lib/supabase';
 import { fmtDateTime } from '@/lib/dates';
 import { useApp } from './AppShell';
 
@@ -28,6 +28,14 @@ export default function DossierConnection() {
     showToast(fromDate ? 'Saved. Older trainees are skipped by the sync and the Excel import.' : 'Removed. All rows are read again.');
   };
   const [configured, setConfigured] = useState(null);
+  const [check, setCheck] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const testConnection = async () => {
+    setChecking(true); setCheck(null);
+    try { setCheck(await authFetch('/api/script-check', { method: 'POST' })); }
+    catch (e) { setCheck({ ok: false, message: e.message }); }
+    setChecking(false);
+  };
   const [runs, setRuns] = useState([]);
   const [secret, setSecret] = useState('');
 
@@ -57,8 +65,8 @@ export default function DossierConnection() {
     <section className="panel p-6">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-bold">Dossier upload & Google script</h2>
-          <p className="mt-1 text-sm text-slate-500">Trainees are updated only by uploading the Dossier file (Trainees &amp; Batches → Upload Dossier sheet); there is no automatic Dossier sync. The Google script below is used only for Contact Details and for pushing Upskill / Refresher sessions to the Training Log sheet.</p>
+          <h2 className="text-base font-bold">Training Log & Contact Details (Google script)</h2>
+          <p className="mt-1 text-sm text-slate-500">The Google script pushes Upskill / Refresher sessions to the Training Log sheet and refreshes Contact Details. It is not connected to the Dossier sheet: trainees are updated only by uploading the Dossier file (Trainees &amp; Batches → Upload Dossier sheet).</p>
         </div>
         <button className="btn-ghost btn-sm" onClick={load} aria-label="Refresh"><RefreshCw size={14} /></button>
       </div>
@@ -86,12 +94,18 @@ export default function DossierConnection() {
         <div className="flex flex-col gap-2 sm:flex-row">
           <input id="script-url" className="input flex-1 font-mono text-xs" value={scriptUrl} onChange={(e) => setScriptUrl(e.target.value)} placeholder="https://script.google.com/macros/s/…/exec" />
           <button className="btn-primary btn-sm" onClick={saveUrl} disabled={savingUrl}>Save</button>
+          <button className="btn-secondary btn-sm" onClick={testConnection} disabled={checking}>{checking ? 'Testing…' : 'Test connection'}</button>
         </div>
+        {check && (
+          <div className={`mt-2 rounded-lg px-3 py-2 text-sm ${check.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+            {check.ok ? '✓ ' : '✗ '}{check.message}{check.detail ? <span className="block text-xs opacity-75">Script said: {check.detail}</span> : null}
+          </div>
+        )}
         <p className="mt-1.5 text-xs text-slate-500">In Apps Script: Deploy → New deployment → Web app → Execute as <b>Me</b>, Who has access <b>Anyone</b> → Deploy → copy the URL. After editing the script later: Deploy → Manage deployments → ✏️ → Version: New version → Deploy.</p>
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <a href="/dossier-sync.gs" download className="btn-secondary btn-sm"><Download size={14} />Download Google script</a>
+        <a href="/training-log.gs" download className="btn-secondary btn-sm"><Download size={14} />Download Training Log script</a>
         <button className="btn-secondary btn-sm" onClick={makeSecret}>Generate a secret</button>
       </div>
       {secret && (

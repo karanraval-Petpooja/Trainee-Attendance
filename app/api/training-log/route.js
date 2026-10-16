@@ -71,6 +71,20 @@ export async function POST(req) {
     if (!secret) throw httpError(503, 'DOSSIER_SYNC_SECRET is not set on the server');
     if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) throw httpError(400, 'The Google script web app address is not set (Settings → Dossier connection).');
 
+    // 1) Ask the script at the saved link which version it runs (old code cannot answer this)
+    const tail = url.replace(/\/exec.*$/, '').slice(-8);
+    let ver = null;
+    try {
+      const vr = await fetch(`${url}${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(secret)}&action=version`, { redirect: 'follow', cache: 'no-store' });
+      const vt = await vr.text();
+      try { ver = JSON.parse(vt); } catch { ver = { ok: false, error: `not JSON: ${vt.slice(0, 120)}` }; }
+    } catch (e) { ver = { ok: false, error: e.message }; }
+    if (!ver.ok || !ver.version) {
+      throw httpError(502, `The saved Google script link (…${tail}/exec) is not the new script. It answered: "${String(ver.error || 'no version').slice(0, 160)}". `
+        + (/wrong key/i.test(ver.error || '') ? 'SYNC_SECRET in the script must be exactly DOSSIER_SYNC_SECRET from Vercel.'
+          : 'Copy the Web app URL of the deployment made from the final script (Deploy → Manage deployments) into Settings and Save.'));
+    }
+    // 2) Push
     const res = await fetch(`${url}${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(secret)}&action=trainingLog`, {
       method: 'POST', redirect: 'follow', cache: 'no-store',
       headers: { 'Content-Type': 'text/plain' }, // simple body for Apps Script
@@ -78,12 +92,8 @@ export async function POST(req) {
     });
     const text = await res.text();
     let out;
-    try { out = JSON.parse(text); } catch { throw httpError(502, 'The Google script did not answer with JSON. Paste the latest script, then Deploy → New version.'); }
-    // An old script deployment does not know action=trainingLog and runs the old Dossier sync instead
-    if (!out.ok && /sync failed|dossier/i.test(out.error || '')) {
-      throw httpError(502, 'The Google script that is live is an OLD version (it ran the Dossier sync instead of the Training Log push). In Apps Script: paste the latest dossier-sync.gs, Save, then Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then push again.');
-    }
-    if (!out.ok) throw httpError(502, out.error || 'The Google script reported an error.');
+    try { out = JSON.parse(text); } catch { throw httpError(502, 'The Google script did not answer with JSON. Paste the latest training-log.gs, then Deploy → New version.'); }
+    if (!out.ok) throw httpError(502, `Script ${ver.version} answered: ${out.error || 'an error'}`);
     if (typeof out.added !== 'number') throw httpError(502, 'The Google script is an older version: paste the latest script, then Deploy → Manage deployments → Edit → New version.');
 
     await a.from('ojt_sessions').update({
