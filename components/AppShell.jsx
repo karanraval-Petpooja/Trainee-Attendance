@@ -23,7 +23,7 @@ const REPORTS = [
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];
 const TRAINER_GROUPS = [
-  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, { href: '/feedback', label: 'NHT Feedback Form', icon: QrCode }] },
+  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
   { id: 'attendance', title: 'Attendance', items: [
     { href: '/attendance', label: 'Mark Attendance', icon: CheckCircle2 },
     { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
@@ -42,7 +42,7 @@ const TRAINER_GROUPS = [
   ] },
 ];
 const MANAGER_GROUPS = [
-  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }, { href: '/feedback', label: 'NHT Feedback Form', icon: QrCode }] },
+  { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
   { id: 'attendance', title: 'Attendance', items: [
     { href: '/attendance', label: 'Attendance Register', icon: CheckCircle2 },
     { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
@@ -274,6 +274,10 @@ export default function AppShell({ children }) {
               <div className="truncate font-display text-base font-bold text-ink-900">{title}</div>
               <div className="hidden items-center gap-1.5 text-xs text-slate-500 sm:flex"><CalendarDays size={12} />{fmtLong(now.date)}</div>
             </div>
+            <Link href="/feedback" title="NHT Feedback Form: share the QR / link with trainees"
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${pathname === '/feedback' ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-ink-800 hover:border-slate-300 hover:bg-slate-50'}`}>
+              <QrCode size={16} /><span className="hidden sm:inline">NHT Feedback</span>
+            </Link>
             <NotificationBell />
           </header>
           <main className="mx-auto max-w-[1400px] px-4 py-6 lg:px-8 lg:py-8">
