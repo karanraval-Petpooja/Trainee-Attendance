@@ -79,6 +79,10 @@ export async function POST(req) {
     const text = await res.text();
     let out;
     try { out = JSON.parse(text); } catch { throw httpError(502, 'The Google script did not answer with JSON. Paste the latest script, then Deploy → New version.'); }
+    // An old script deployment does not know action=trainingLog and runs the old Dossier sync instead
+    if (!out.ok && /sync failed|dossier/i.test(out.error || '')) {
+      throw httpError(502, 'The Google script that is live is an OLD version (it ran the Dossier sync instead of the Training Log push). In Apps Script: paste the latest dossier-sync.gs, Save, then Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy. Then push again.');
+    }
     if (!out.ok) throw httpError(502, out.error || 'The Google script reported an error.');
     if (typeof out.added !== 'number') throw httpError(502, 'The Google script is an older version: paste the latest script, then Deploy → Manage deployments → Edit → New version.');
 
