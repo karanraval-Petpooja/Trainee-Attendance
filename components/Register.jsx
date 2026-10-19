@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock, Search } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { addDays, fmtClock, fmtLong, fmtMedium, fmtTime } from '@/lib/dates';
-import { EXIT_LABELS, MARK_OPTIONS, notJoining, notJoiningReason, onRegister, outOfScope, periodsOf, sentToFloor, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
+import { EXIT_LABELS, MARK_OPTIONS, notJoining, notJoiningReason, onRegister, outOfScope, pastDeadline, periodsOf, sentToFloor, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
 import { useApp } from './AppShell';
 import { ErrorText, Modal, PageLoader, Spinner } from './ui';
 
@@ -30,7 +30,7 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
   const wo = weekOffReason(date, settings);
   const future = date > now.date;
   const lockBefore = addDays(now.date, -settings.edit_window_days);
-  const late = date < now.date || now.time > settings.attendance_deadline;
+  const late = date < now.date || pastDeadline(now, settings);
 
   const idKey = trainees.map((t) => t.id).join(',');
   const load = useCallback(async () => {
