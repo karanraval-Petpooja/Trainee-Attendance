@@ -42,6 +42,7 @@ export default function ProfilePage() {
     <div className="space-y-6">
       <PageHeader title="Profile" />
       <PhoneNotifications compact />
+      <p className="mb-4 text-xs text-slate-400">App version {process.env.NEXT_PUBLIC_APP_VERSION || 'dev'}</p>
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="panel p-6 lg:col-span-2">
           <div className="flex items-center gap-4">

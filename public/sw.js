@@ -1,7 +1,7 @@
 /* Trainer Attendance – service worker.
    Makes the app installable and shows an offline page when there is no internet.
    It NEVER stores attendance or any data: every page and every API / database call always goes to the network. */
-const VERSION = 'ta-v2';
+const VERSION = 'ta-v3';
 const STATIC = `static-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
@@ -60,3 +60,6 @@ self.addEventListener('notificationclick', (event) => {
     return self.clients.openWindow(url);
   }));
 });
+
+// "Update now" in the app: take over straight away
+self.addEventListener('message', (event) => { if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting(); });

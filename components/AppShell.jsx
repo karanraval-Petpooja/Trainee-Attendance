@@ -11,6 +11,7 @@ import { fmtLong, nowInTz } from '@/lib/dates';
 import Logo from './Logo';
 import NotificationBell from './NotificationBell';
 import { InstallButton, IosInstallTip } from './PwaSetup';
+import UpdatePrompt from './UpdatePrompt';
 import { ErrorText, PageLoader } from './ui';
 
 const Ctx = createContext(null);
@@ -217,6 +218,7 @@ export default function AppShell({ children }) {
   return (
     <Ctx.Provider value={value}>
       <IosInstallTip />
+      <UpdatePrompt />
       <div className="min-h-screen">
         {navOpen && <div className="fixed inset-0 z-40 bg-ink-900/40 lg:hidden" onClick={() => setNavOpen(false)} />}
         <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-ink-900 text-ink-100 transition-transform lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
