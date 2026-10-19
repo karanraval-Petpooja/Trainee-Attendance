@@ -283,9 +283,9 @@ export default function AppShell({ children }) {
               <div className="hidden items-center gap-1.5 text-xs text-slate-500 sm:flex"><CalendarDays size={12} />{fmtLong(now.date)}</div>
             </div>
             <InstallButton />
-            <Link data-tour="nht-feedback" href="/feedback" title="NHT Feedback Form: share the QR / link with trainees"
+            <Link data-tour="nht-feedback" href="/feedback" title="Feedback forms: NHT, Sales, Upskill, OJT / PIP"
               className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${pathname === '/feedback' ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-ink-800 hover:border-slate-300 hover:bg-slate-50'}`}>
-              <QrCode size={16} /><span className="hidden sm:inline">NHT Feedback</span>
+              <QrCode size={16} /><span className="hidden sm:inline">Feedback</span>
             </Link>
             <NotificationBell />
           </header>

@@ -2,7 +2,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, BarChart3, CheckCircle2, FileSpreadsheet, Search, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, BarChart3, CheckCircle2, FileSpreadsheet, QrCode, Search, Send, Trash2 } from 'lucide-react';
+import NhtFeedbackShare from '@/components/NhtFeedbackShare';
+import { formForSession } from '@/lib/feedbackForms';
 import { useApp } from '@/components/AppShell';
 import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner, StatCard } from '@/components/ui';
 import { useTrainers } from '@/lib/hooks';
@@ -89,6 +91,7 @@ export default function OjtSessionPage() {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all');
   const [pushOpen, setPushOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const search = useSearchParams();
 
   useEffect(() => {
@@ -139,6 +142,9 @@ export default function OjtSessionPage() {
                 title={`Pushed on ${fmtMedium(session.pushed_at.slice(0, 10))}${session.topic ? ` · Topic: ${session.topic}` : ''}`}>
                 <CheckCircle2 size={16} />Pushed to Training Log · {fmtMedium(session.pushed_at.slice(0, 10))}{session.pushed_sr ? ` · Sr. No ${session.pushed_sr}` : ''}
               </span>
+            )}
+            {formForSession(session.session_type) && (
+              <button className="btn-secondary" onClick={() => setFeedbackOpen(true)}><QrCode size={16} />Feedback form</button>
             )}
             <Link href={`/ojt/charts?session=${session.id}`} className="btn-secondary"><BarChart3 size={16} />Charts</Link>
             <button className="btn-primary" onClick={() => downloadOjtWorkbook(rows, `${session.title.replace(/[^a-z0-9]+/gi, '_')}_${session.session_date}.xlsx`)}><FileSpreadsheet size={16} />Download Excel</button>
@@ -200,6 +206,11 @@ export default function OjtSessionPage() {
             setSession({ ...session, topic, pushed_at: new Date().toISOString(), pushed_rows: j.added, pushed_sr: j.added ? `${j.from}–${j.to}` : session.pushed_sr });
             showToast(j.added ? `Pushed ${j.added} rows to “${j.tab}” (Sr. No ${j.from}–${j.to})${j.skipped ? `, ${j.skipped} already there` : ''}.` : `Nothing new: all ${j.skipped} rows are already in the sheet.`);
           }} />
+      )}
+      {feedbackOpen && formForSession(session.session_type) && (
+        <Modal title={formForSession(session.session_type).name} onClose={() => setFeedbackOpen(false)} wide>
+          <NhtFeedbackShare compact formId={formForSession(session.session_type).id} />
+        </Modal>
       )}
     </div>
   );
