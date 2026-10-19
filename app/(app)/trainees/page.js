@@ -333,8 +333,7 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
 // Step 1 of the handover (trainer): training complete, trainees sent to the floor. Not final; the manager confirms.
 function SentToFloorModal({ items, undo, onClose, onDone }) {
   const { now } = useApp();
-  const floorDates = [...new Set(initialItems.map((t) => t.trainer_handover_date).filter(Boolean))];
-  const [date, setDate] = useState(mode === 'handover' && floorDates.length === 1 ? floorDates[0] : now.date); // trainer's "sent to floor" date
+  const [date, setDate] = useState(now.date);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const run = async () => {
@@ -373,7 +372,8 @@ function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag, t
   const [retrainBatch, setRetrainBatch] = useState('');
   const [items, setItems] = useState(initialItems);
   const single = items.length === 1 ? items[0] : null;
-  const [date, setDate] = useState(now.date);
+  const floorDates = [...new Set(initialItems.map((t) => t.trainer_handover_date).filter(Boolean))];
+  const [date, setDate] = useState(mode === 'handover' && floorDates.length === 1 ? floorDates[0] : now.date); // trainer's "sent to floor" date
   const [rm, setRm] = useState(single?.reporting_manager || '');
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
