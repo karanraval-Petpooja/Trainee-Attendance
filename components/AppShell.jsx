@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode,
+  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -12,6 +12,7 @@ import Logo from './Logo';
 import NotificationBell from './NotificationBell';
 import { InstallButton, IosInstallTip } from './PwaSetup';
 import UpdatePrompt from './UpdatePrompt';
+import WhatsNew from './WhatsNew';
 import { ErrorText, PageLoader } from './ui';
 
 const Ctx = createContext(null);
@@ -40,6 +41,7 @@ const TRAINER_GROUPS = [
   { id: 'reports', title: 'Reports', items: REPORTS },
   { id: 'account', title: 'Account', items: [
     { href: '/notifications', label: 'Notifications', icon: Bell },
+    { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
     { href: '/profile', label: 'Profile', icon: UserCircle },
   ] },
 ];
@@ -62,6 +64,7 @@ const MANAGER_GROUPS = [
   { id: 'reports', title: 'Reports', items: REPORTS },
   { id: 'account', title: 'Account', items: [
     { href: '/notifications', label: 'Notifications', icon: Bell },
+    { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
     { href: '/profile', label: 'Profile', icon: UserCircle },
   ] },
 ];
@@ -219,6 +222,7 @@ export default function AppShell({ children }) {
     <Ctx.Provider value={value}>
       <IosInstallTip />
       <UpdatePrompt />
+      <WhatsNew />
       <div className="min-h-screen">
         {navOpen && <div className="fixed inset-0 z-40 bg-ink-900/40 lg:hidden" onClick={() => setNavOpen(false)} />}
         <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-ink-900 text-ink-100 transition-transform lg:translate-x-0 ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -279,7 +283,7 @@ export default function AppShell({ children }) {
               <div className="hidden items-center gap-1.5 text-xs text-slate-500 sm:flex"><CalendarDays size={12} />{fmtLong(now.date)}</div>
             </div>
             <InstallButton />
-            <Link href="/feedback" title="NHT Feedback Form: share the QR / link with trainees"
+            <Link data-tour="nht-feedback" href="/feedback" title="NHT Feedback Form: share the QR / link with trainees"
               className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${pathname === '/feedback' ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-ink-800 hover:border-slate-300 hover:bg-slate-50'}`}>
               <QrCode size={16} /><span className="hidden sm:inline">NHT Feedback</span>
             </Link>

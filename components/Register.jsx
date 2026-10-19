@@ -204,7 +204,7 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
 
       {outside > 0 && (
         <div className="mt-2">
-          <button type="button" onClick={() => setShowOut((v) => !v)} className="text-xs font-semibold text-ink-700 hover:underline">
+          <button type="button" data-tour="who-and-why" onClick={() => setShowOut((v) => !v)} className="text-xs font-semibold text-ink-700 hover:underline">
             {outside} trainee{outside === 1 ? ' is' : 's are'} not on this register for this date · {showOut ? 'Hide' : 'Show who and why'}
           </button>
           {showOut && (

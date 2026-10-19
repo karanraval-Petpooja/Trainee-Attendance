@@ -57,7 +57,7 @@ export default function ManagerDashboard() {
       </div>
 
       {awaitingGroups.length > 0 && (
-        <section className="panel border-indigo-200 p-5">
+        <section data-tour="awaiting-handover" className="panel border-indigo-200 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="text-sm font-bold text-ink-900">Awaiting final handover · {awaiting.length} trainee{awaiting.length === 1 ? '' : 's'}</div>

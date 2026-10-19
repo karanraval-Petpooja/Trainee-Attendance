@@ -28,7 +28,7 @@ export function InstallButton() {
   const { canInstall, install } = useInstall();
   if (!canInstall) return null;
   return (
-    <button type="button" onClick={install} title="Install Trainer Attendance as an app"
+    <button type="button" data-tour="install-app" onClick={install} title="Install Trainer Attendance as an app"
       className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
       <Download size={16} /><span className="hidden sm:inline">Install app</span>
     </button>

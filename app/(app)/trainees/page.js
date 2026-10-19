@@ -826,7 +826,7 @@ export default function TraineesPage() {
       <PageHeader title={isManager ? 'Trainees & batches' : 'My trainees & batches'} subtitle={`${counts.training || 0} in training today`}
         actions={(
           <>
-            {isManager && <button className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
+            {isManager && <button data-tour="upload-dossier" className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
             <button className="btn-primary" onClick={() => setForm(blank)}><Plus size={16} />Add Trainee</button>
@@ -935,7 +935,7 @@ export default function TraineesPage() {
             {trainers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </select>
         )}
-        <select className="input sm:w-56" value={show} onChange={(e) => setShow(e.target.value)} aria-label="Status filter">
+        <select data-tour="status-filter" className="input sm:w-56" value={show} onChange={(e) => setShow(e.target.value)} aria-label="Status filter">
           <option value="training">In training ({counts.training || 0})</option>
           <option value="overdue">Overdue: past probable handover ({trainees.filter(isOverdue).length})</option>
           <option value="awaiting">Awaiting final handover: sent to floor ({trainees.filter(isAwaiting).length})</option>
@@ -1029,11 +1029,11 @@ export default function TraineesPage() {
                     <td>
                       <div className="flex justify-end gap-1">
                         {isManager && (openPeriod(t) && !notJoiningReason(t.exit_reason)
-                          ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
+                          ? <button data-tour="handover" className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
                           : <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'return' })} title="Bring back for training"><RotateCcw size={14} />Bring back</button>)}
                         {!isManager && !t.exit_reason && traineeActiveOn(t, now.date) && (sentToFloor(t)
                           ? <button className="btn-ghost btn-sm" onClick={() => setFloor({ items: [t], undo: true })} title="Undo sent to floor"><Undo2 size={14} />Undo</button>
-                          : <button className="btn-ghost btn-sm text-emerald-700" onClick={() => setFloor({ items: [t] })} title="Training complete: sent to floor"><CheckCheck size={14} />Training complete</button>)}
+                          : <button data-tour="training-complete" className="btn-ghost btn-sm text-emerald-700" onClick={() => setFloor({ items: [t] })} title="Training complete: sent to floor"><CheckCheck size={14} />Training complete</button>)}
                         {isManager && <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>}
                         {isManager && (
                           <button className="btn-ghost btn-sm" onClick={() => toggle(t)} aria-label={t.status === 'active' ? `Remove ${t.name}` : `Restore ${t.name}`} title={t.status === 'active' ? 'Remove from attendance' : 'Restore'}>

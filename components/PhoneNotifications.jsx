@@ -15,16 +15,17 @@ const key = () => {
 // "Turn on phone notifications": alerts from the 🔔 also arrive as phone notifications, even when the app is closed
 export default function PhoneNotifications({ compact = false }) {
   const { showToast } = useApp();
-  const [state, setState] = useState('checking'); // checking | unsupported | ios-home | denied | off | on
+  const [state, setState] = useState('checking'); // checking | not-set-up | unsupported | ios-home | denied | off | on
   const [busy, setBusy] = useState(false);
 
   const check = async () => {
     const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
     const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) { setState('not-set-up'); return; }
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
       setState(ios && !standalone ? 'ios-home' : 'unsupported'); return;
     }
-    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) { setState('unsupported'); return; }
+    if (!process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY) { setState('not-set-up'); return; } // key missing in this build
     if (Notification.permission === 'denied') { setState('denied'); return; }
     const reg = await navigator.serviceWorker.getRegistration();
     const sub = reg && await reg.pushManager.getSubscription();
@@ -77,11 +78,12 @@ export default function PhoneNotifications({ compact = false }) {
     'off': 'Get attendance alerts and handover reminders as phone notifications, even when the app is closed.',
     'denied': 'Notifications are blocked for this app. Allow them in the phone settings (Settings → Notifications → Trainer Attendance / Chrome), then reopen the app.',
     'ios-home': 'On iPhone: first add the app to the Home Screen (Safari → Share → Add to Home Screen), open it from there, then turn notifications on here. Needs iOS 16.4 or newer.',
+    'not-set-up': 'Phone notifications are not set up on the server yet: NEXT_PUBLIC_VAPID_PUBLIC_KEY is missing in this version of the app. Add it in Vercel (with VAPID_PRIVATE_KEY and VAPID_SUBJECT), then Redeploy.',
     'unsupported': 'This browser cannot show phone notifications. Use Chrome on Android, or the Home-Screen app on iPhone (iOS 16.4+).',
   }[state];
 
   return (
-    <section className={`panel ${compact ? 'p-4' : 'p-5'} mb-4`}>
+    <section data-tour="phone-notifications" className={`panel ${compact ? 'p-4' : 'p-5'} mb-4`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${state === 'on' ? 'bg-emerald-100 text-emerald-700' : 'bg-ink-100 text-ink-700'}`}>
           {state === 'on' ? <BellRing size={20} /> : <BellOff size={20} />}
