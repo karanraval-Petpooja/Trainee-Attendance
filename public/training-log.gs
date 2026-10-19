@@ -1,6 +1,7 @@
 /**
- * TRAINING LOG + CONTACT DETAILS script for the Trainer Attendance app.
- * (No Dossier sheet: trainees are updated only by uploading the Dossier file in the app.)
+ * FINAL script for the Trainer Attendance app (paste it into your SAME Apps Script project,
+ * replacing all the old code). It does only two things, and never opens the Dossier sheet:
+ * (trainees are updated only by uploading the Dossier file in the app)
  *
  *  • Training Log: Upskill / Refresher sessions pushed from the app (Push to Training Log)
  *    are written into your Training Log sheet, one row per participant; Sr. No continues per trainer.
@@ -16,7 +17,7 @@
  *  4. Choose "createTrigger" → Run (Contact Details refresh every few hours).
  *  After changing this code later: Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.
  */
-const SCRIPT_VERSION = '2026-10-16 training-log-only-v1'; // shown in the log, so you can see which code is running
+const SCRIPT_VERSION = '2026-10-19 final-v9'; // shown in the log, so you can see which code is running
 
 const CONFIG = {
   APP_URL: 'https://YOUR-APP.vercel.app',          // your app address (no / at the end)
@@ -43,7 +44,7 @@ const CONFIG = {
 // The app calls this web app address with the secret: action=trainingLog (push) or action=contacts (refresh)
 function doGet(e) {
   var out;
-  if (!e || !e.parameter || e.parameter.key !== CONFIG.SYNC_SECRET) out = { ok: false, error: 'Wrong key' };
+  if (!e || !e.parameter || String(e.parameter.key || '').trim() !== String(CONFIG.SYNC_SECRET).trim()) out = { ok: false, error: 'Wrong key' };
   else {
     try {
       const action = e.parameter.action;
@@ -202,7 +203,7 @@ function syncContacts() {
     const chunk = rows.slice(i, i + step);
     const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/contacts-sync', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-      headers: { 'x-sync-secret': CONFIG.SYNC_SECRET },
+      headers: { 'x-sync-secret': String(CONFIG.SYNC_SECRET).trim() },
       payload: JSON.stringify({ header: header, rows: chunk, runId: runId, final: i + step >= rows.length }),
     });
     const body = JSON.parse(res.getContentText() || '{}');

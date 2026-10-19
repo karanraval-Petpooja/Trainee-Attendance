@@ -8,8 +8,8 @@ export const maxDuration = 60;
 
 export async function POST(req) {
   try {
-    const secret = process.env.DOSSIER_SYNC_SECRET;
-    if (!secret || req.headers.get('x-sync-secret') !== secret) throw httpError(401, 'Wrong sync secret');
+    const secret = (process.env.DOSSIER_SYNC_SECRET || '').trim();
+    if (!secret || (req.headers.get('x-sync-secret') || '').trim() !== secret) throw httpError(401, 'Wrong sync secret');
     const body = await req.json();
     if (!Array.isArray(body.header) || !Array.isArray(body.rows)) throw httpError(400, 'Send { header: [...], rows: [[...]] }');
     const { contacts, errors } = parseContacts(body.header, body.rows);

@@ -7,7 +7,7 @@ export const maxDuration = 60;
 export async function POST(req) {
   try {
     const { a } = await requireUser(req); // trainers can refresh too (read-only for them otherwise)
-    const secret = process.env.DOSSIER_SYNC_SECRET;
+    const secret = (process.env.DOSSIER_SYNC_SECRET || '').trim();
     if (!secret) throw httpError(503, 'DOSSIER_SYNC_SECRET is not set on the server');
     const { data: st } = await a.from('settings').select('dossier_script_url').eq('id', 1).single();
     const url = (st?.dossier_script_url || '').trim();

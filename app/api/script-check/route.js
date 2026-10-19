@@ -7,7 +7,7 @@ export const maxDuration = 30;
 export async function POST(req) {
   try {
     const { a } = await requireManager(req);
-    const secret = process.env.DOSSIER_SYNC_SECRET;
+    const secret = (process.env.DOSSIER_SYNC_SECRET || '').trim();
     if (!secret) throw httpError(503, 'DOSSIER_SYNC_SECRET is not set in Vercel.');
     const { data: st } = await a.from('settings').select('dossier_script_url').eq('id', 1).single();
     const url = (st?.dossier_script_url || '').trim();

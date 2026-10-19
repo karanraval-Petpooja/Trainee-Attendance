@@ -67,7 +67,7 @@ export async function POST(req) {
 
     const { data: st } = await a.from('settings').select('dossier_script_url').eq('id', 1).single();
     const url = (st?.dossier_script_url || '').trim();
-    const secret = process.env.DOSSIER_SYNC_SECRET;
+    const secret = (process.env.DOSSIER_SYNC_SECRET || '').trim();
     if (!secret) throw httpError(503, 'DOSSIER_SYNC_SECRET is not set on the server');
     if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) throw httpError(400, 'The Google script web app address is not set (Settings → Dossier connection).');
 
