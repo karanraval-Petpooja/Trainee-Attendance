@@ -11,6 +11,8 @@ import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, pe
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
+import NhtFeedbackShare from '@/components/NhtFeedbackShare';
+import { FEEDBACK_FORMS } from '@/lib/feedbackForms';
 
 const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
 
@@ -336,13 +338,46 @@ function SentToFloorModal({ items, undo, onClose, onDone }) {
   const [date, setDate] = useState(now.date);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [step, setStep] = useState('mark'); // mark → feedback (asked) → share (form shown)
+  const [doneMsg, setDoneMsg] = useState('');
+  const [formId, setFormId] = useState('nht');
   const run = async () => {
     setBusy(true); setError('');
     const { data, error: e } = await sb().rpc('trainer_mark_handover', { p_trainees: items.map((t) => t.id), p_date: undo ? null : date, p_undo: Boolean(undo) });
     setBusy(false);
     if (e) { setError(e.message); return; }
-    onDone(undo ? `${data} trainee${data === 1 ? '' : 's'} back on your register.` : `${data} trainee${data === 1 ? '' : 's'} marked as sent to the floor. Your manager will confirm the final handover.`);
+    if (undo) { onDone(`${data} trainee${data === 1 ? '' : 's'} back on your register.`); return; }
+    setDoneMsg(`${data} trainee${data === 1 ? '' : 's'} marked as sent to the floor. Your manager will confirm the final handover.`);
+    setStep('feedback'); // training complete → ask about the feedback form
   };
+
+  if (step === 'feedback') {
+    return (
+      <Modal title="Training complete ✓" onClose={() => onDone(doneMsg)}
+        footer={<><button className="btn-secondary" onClick={() => setStep('share')}>Not yet, share the form now</button><button className="btn-primary" onClick={() => onDone(doneMsg)}>Yes, feedback taken</button></>}>
+        <div className="text-center">
+          <div className="text-4xl">📝</div>
+          <h3 className="mt-2 text-lg font-bold text-ink-900">Did you take the feedback from the trainees?</h3>
+          <p className="mt-1 text-sm text-slate-500">Every trainee should fill the feedback form before leaving training.</p>
+        </div>
+      </Modal>
+    );
+  }
+  if (step === 'share') {
+    return (
+      <Modal title="Share the feedback form" onClose={() => onDone(doneMsg)} wide
+        footer={<button className="btn-primary" onClick={() => onDone(doneMsg)}>Done</button>}>
+        <div className="mb-3 flex flex-wrap gap-2">
+          {FEEDBACK_FORMS.map((f) => (
+            <button key={f.id} type="button" onClick={() => setFormId(f.id)}
+              className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${formId === f.id ? 'border-ink-800 bg-ink-800 text-white' : 'border-slate-200 bg-white text-slate-700'}`}>{f.label}</button>
+          ))}
+        </div>
+        <NhtFeedbackShare key={formId} compact formId={formId} />
+        <p className="mt-3 text-xs text-slate-500">Show the QR on screen so everyone scans it, or send the link to the batch.</p>
+      </Modal>
+    );
+  }
   return (
     <Modal title={undo ? 'Undo “sent to floor”' : 'Training complete: sent to floor'} onClose={onClose}
       footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={run} disabled={busy}>{busy && <Spinner size={16} />}{undo ? 'Undo' : 'Confirm'}</button></>}>
