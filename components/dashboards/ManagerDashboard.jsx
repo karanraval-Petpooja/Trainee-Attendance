@@ -1,5 +1,6 @@
 'use client';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { sb } from '@/lib/supabase';
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, Clock, GraduationCap, Siren, Sun, UserX, Users } from 'lucide-react';
 import { addDays, fmtClock, fmtDateTime, fmtMedium, fmtShort, rangeKeys } from '@/lib/dates';
@@ -22,11 +23,15 @@ export default function ManagerDashboard() {
 
   const missed = useMemo(() => alerts.reduce((m, a) => ({ ...m, [a.trainer_id]: (m[a.trainer_id] || 0) + 1 }), {}), [alerts]);
   const all = groupStatus({ dateKey: today, settings, trainees, recordsByTrainee: byTrainee, now });
+  // feedback answers trainers gave at "Training complete"
+  const [fb, setFb] = useState({});
+  useEffect(() => { sb().from('trainee_feedback').select('trainee_id, status').then(({ data }) => setFb(Object.fromEntries((data || []).map((f) => [f.trainee_id, f.status])))).catch(() => {}); }, [trainees.length]);
   // two-step handover: trainers marked "training complete", the final handover is still to confirm
   const awaiting = trainees.filter((t) => t.status === 'active' && !t.deleted_at && sentToFloor(t));
   const awaitingGroups = Object.values(awaiting.reduce((m, t) => {
     const k = `${t.trainer_id || ''}|${t._batch?.code || '—'}`;
-    (m[k] = m[k] || { trainer: t.trainer_id, batch: t._batch?.code || 'No batch', n: 0, since: t.trainer_handover_date }).n += 1;
+    (m[k] = m[k] || { trainer: t.trainer_id, batch: t._batch?.code || 'No batch', n: 0, since: t.trainer_handover_date, taken: 0, shared: 0 }).n += 1;
+    if (fb[t.id] === 'taken') m[k].taken += 1; else if (fb[t.id] === 'shared') m[k].shared += 1;
     if (t.trainer_handover_date < m[k].since) m[k].since = t.trainer_handover_date;
     return m;
   }, {})).sort((a, b) => a.since.localeCompare(b.since));
@@ -70,7 +75,14 @@ export default function ManagerDashboard() {
               <li key={`${g.trainer}|${g.batch}`} className="flex items-center gap-3 px-3 py-2 text-sm">
                 <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">{g.batch}</span>
                 <span className="min-w-0 flex-1 truncate">{trainers.find((x) => x.id === g.trainer)?.name || 'No trainer'}</span>
-                <span className="text-xs text-slate-500">{g.n} trainee{g.n === 1 ? '' : 's'} · since {fmtMedium(g.since)}</span>
+                <span className="text-right text-xs text-slate-500">
+                  {g.n} trainee{g.n === 1 ? '' : 's'} · since {fmtMedium(g.since)}
+                  <span className="block">
+                    {g.taken > 0 && <span className="font-semibold text-emerald-700">feedback taken {g.taken}</span>}
+                    {g.shared > 0 && <span className="font-semibold text-sky-700">{g.taken ? ' · ' : ''}form shared {g.shared}</span>}
+                    {g.n - g.taken - g.shared > 0 && <span className="font-semibold text-amber-700">{g.taken || g.shared ? ' · ' : ''}not confirmed {g.n - g.taken - g.shared}</span>}
+                  </span>
+                </span>
               </li>
             ))}
           </ul>

@@ -351,10 +351,15 @@ function SentToFloorModal({ items, undo, onClose, onDone }) {
     setStep('feedback'); // training complete → ask about the feedback form
   };
 
+  // the answer is saved for the manager (feedback taken / form shared)
+  const answer = async (status) => {
+    try { await sb().rpc('set_trainee_feedback', { p_trainees: items.map((t) => t.id), p_status: status }); } catch { /* still close */ }
+    onDone(doneMsg);
+  };
   if (step === 'feedback') {
     return (
       <Modal title="Training complete ✓" onClose={() => onDone(doneMsg)}
-        footer={<><button className="btn-secondary" onClick={() => setStep('share')}>Not yet, share the form now</button><button className="btn-primary" onClick={() => onDone(doneMsg)}>Yes, feedback taken</button></>}>
+        footer={<><button className="btn-secondary" onClick={() => setStep('share')}>Not yet, share the form now</button><button className="btn-primary" onClick={() => answer('taken')}>Yes, feedback taken</button></>}>
         <div className="text-center">
           <div className="text-4xl">📝</div>
           <h3 className="mt-2 text-lg font-bold text-ink-900">Did you take the feedback from the trainees?</h3>
@@ -366,7 +371,7 @@ function SentToFloorModal({ items, undo, onClose, onDone }) {
   if (step === 'share') {
     return (
       <Modal title="Share the feedback form" onClose={() => onDone(doneMsg)} wide
-        footer={<button className="btn-primary" onClick={() => onDone(doneMsg)}>Done</button>}>
+        footer={<button className="btn-primary" onClick={() => answer('shared')}>Done</button>}>
         <div className="mb-3 flex flex-wrap gap-2">
           {FEEDBACK_FORMS.map((f) => (
             <button key={f.id} type="button" onClick={() => setFormId(f.id)}
@@ -780,6 +785,9 @@ export default function TraineesPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [handover, setHandover] = useState(null); // { items, mode }
   const [floor, setFloor] = useState(null); // trainer step: { items, undo }
+  const [feedback, setFeedback] = useState({}); // trainee id → 'taken' | 'shared'
+  const loadFeedback = () => sb().from('trainee_feedback').select('trainee_id, status').then(({ data }) => setFeedback(Object.fromEntries((data || []).map((f) => [f.trainee_id, f.status])))).catch(() => {});
+  useEffect(() => { loadFeedback(); }, [trainees]);
 
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training'
     : notJoining(t) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
@@ -1039,7 +1047,12 @@ export default function TraineesPage() {
                     <td className="text-slate-600">
                       {t.tcd_lwd ? fmtMedium(t.tcd_lwd) : EXIT_LABELS[t.exit_reason || '']}
                       {sentToFloor(t) && (
-                        <div className="text-xs font-semibold text-indigo-700">Sent to floor {fmtMedium(t.trainer_handover_date)} · awaiting manager</div>
+                        <>
+                          <div className="text-xs font-semibold text-indigo-700">Sent to floor {fmtMedium(t.trainer_handover_date)} · awaiting manager</div>
+                          <div className={`text-xs font-semibold ${feedback[t.id] === 'taken' ? 'text-emerald-700' : feedback[t.id] === 'shared' ? 'text-sky-700' : 'text-amber-700'}`}>
+                            {feedback[t.id] === 'taken' ? 'Feedback taken ✓' : feedback[t.id] === 'shared' ? 'Feedback form shared' : 'Feedback not confirmed'}
+                          </div>
+                        </>
                       )}
                       {!sentToFloor(t) && !t.tcd_lwd && !t.exit_reason && t.probable_handover_date && (() => {
                         const left = Math.round((Date.parse(t.probable_handover_date) - Date.parse(now.date)) / 86400000);
