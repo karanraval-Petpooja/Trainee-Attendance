@@ -1,13 +1,13 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ArrowRightLeft, ClipboardPaste, FileUp, Layers, Repeat, Undo2, Pencil, Plus, RotateCcw, Search, Trash2, UserCheck, UserX, X } from 'lucide-react';
+import { ArrowRight, ArrowRightLeft, CheckCheck, ClipboardPaste, FileUp, Layers, Repeat, Undo2, Pencil, Plus, RotateCcw, Search, Trash2, UserCheck, UserX, X } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner } from '@/components/ui';
 import { useTrainees, useTrainers } from '@/lib/hooks';
 import { sb } from '@/lib/supabase';
 import { addDays, fmtMedium } from '@/lib/dates';
-import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, periodsOf, traineeActiveOn } from '@/lib/status';
+import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, periodsOf, sentToFloor, traineeActiveOn } from '@/lib/status';
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
@@ -330,6 +330,41 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
 }
 
 /** Manager only: hand over to reporting manager, or bring back for training. Works for one or many trainees. */
+// Step 1 of the handover (trainer): training complete, trainees sent to the floor. Not final; the manager confirms.
+function SentToFloorModal({ items, undo, onClose, onDone }) {
+  const { now } = useApp();
+  const floorDates = [...new Set(initialItems.map((t) => t.trainer_handover_date).filter(Boolean))];
+  const [date, setDate] = useState(mode === 'handover' && floorDates.length === 1 ? floorDates[0] : now.date); // trainer's "sent to floor" date
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const run = async () => {
+    setBusy(true); setError('');
+    const { data, error: e } = await sb().rpc('trainer_mark_handover', { p_trainees: items.map((t) => t.id), p_date: undo ? null : date, p_undo: Boolean(undo) });
+    setBusy(false);
+    if (e) { setError(e.message); return; }
+    onDone(undo ? `${data} trainee${data === 1 ? '' : 's'} back on your register.` : `${data} trainee${data === 1 ? '' : 's'} marked as sent to the floor. Your manager will confirm the final handover.`);
+  };
+  return (
+    <Modal title={undo ? 'Undo “sent to floor”' : 'Training complete: sent to floor'} onClose={onClose}
+      footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={run} disabled={busy}>{busy && <Spinner size={16} />}{undo ? 'Undo' : 'Confirm'}</button></>}>
+      <p className="text-sm text-slate-600">{items.length === 1 ? <b>{items[0].name}</b> : <b>{items.length} trainees</b>}</p>
+      {!undo && (
+        <>
+          <label className="label mt-4" htmlFor="stf-date">Sent to the floor on</label>
+          <input id="stf-date" type="date" className="input" max={now.date} value={date} onChange={(e) => setDate(e.target.value)} />
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-500">
+            <li>This is <b>not the final handover</b>: the trainee stays in training until your manager confirms it.</li>
+            <li>From the next day: no attendance needed, no handover / overdue reminders, no missed-attendance alerts.</li>
+            <li>Your manager gets a notification to confirm. You can undo this until then.</li>
+          </ul>
+        </>
+      )}
+      {undo && <p className="mt-3 text-sm text-slate-600">They come back on your register and reminders start again.</p>}
+      <div className="mt-3"><ErrorText>{error}</ErrorText></div>
+    </Modal>
+  );
+}
+
 function HandoverModal({ items: initialItems, mode, onClose, onDone, onSetRag, trainers = [], batches = [] }) {
   const { now } = useApp();
   // Retraining: failed → new training period (optionally with another trainer / batch)
@@ -700,6 +735,7 @@ export default function TraineesPage() {
   const trainerName = (id) => trainers.find((t) => t.id === id)?.name || 'Not assigned';
   const [q, setQ] = useState('');
   const [show, setShow] = useState('training');
+  useEffect(() => { const v = new URLSearchParams(window.location.search).get('show'); if (v) setShow(v); }, []); // e.g. ?show=awaiting
   const [trainerFilter, setTrainerFilter] = useState('all');
   const [permanent, setPermanent] = useState(null);
   const [dojFilter, setDojFilter] = useState('all');
@@ -708,14 +744,17 @@ export default function TraineesPage() {
   const [selected, setSelected] = useState(() => new Set());
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [handover, setHandover] = useState(null); // { items, mode }
+  const [floor, setFloor] = useState(null); // trainer step: { items, undo }
 
   const stage = (t) => (t.deleted_at ? 'deleted' : t.status !== 'active' ? 'inactive' : traineeActiveOn(t, now.date) ? 'training'
     : notJoining(t) ? 'done' : t.joining_date > now.date ? 'upcoming' : 'done');
   // Status filter: a group (In training, Ended…) or one Training Status value ("exit:resigned")
-  const isOverdue = (t) => !t.deleted_at && t.status === 'active' && traineeActiveOn(t, now.date)
+  const isAwaiting = (t) => !t.deleted_at && t.status === 'active' && sentToFloor(t);
+  const isOverdue = (t) => !t.deleted_at && t.status === 'active' && traineeActiveOn(t, now.date) && !sentToFloor(t)
     && !t.tcd_lwd && t.probable_handover_date && t.probable_handover_date < now.date;
   const inView = (t) => (show === 'all' ? !t.deleted_at
     : show === 'overdue' ? isOverdue(t)
+    : show === 'awaiting' ? isAwaiting(t)
     : show === 'retraining' ? !t.deleted_at && t.status === 'active' && isRetraining(t)
     : show.startsWith('exit:') ? !t.deleted_at && t.status === 'active' && t.exit_reason === show.slice(5)
       : stage(t) === show);
@@ -899,6 +938,7 @@ export default function TraineesPage() {
         <select className="input sm:w-56" value={show} onChange={(e) => setShow(e.target.value)} aria-label="Status filter">
           <option value="training">In training ({counts.training || 0})</option>
           <option value="overdue">Overdue: past probable handover ({trainees.filter(isOverdue).length})</option>
+          <option value="awaiting">Awaiting final handover: sent to floor ({trainees.filter(isAwaiting).length})</option>
           <option value="upcoming">Joining soon ({counts.upcoming || 0})</option>
           <option value="done">Handed over / ended ({counts.done || 0})</option>
           <optgroup label="By training status">
@@ -924,6 +964,7 @@ export default function TraineesPage() {
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setSwitchItems({ items: selectedRows })}><Repeat size={14} />Switch trainer</button>
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => undoSwitch(selectedRows)}><Undo2 size={14} />Undo switch</button>}
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setMoveItems(selectedRows)}><Layers size={14} />Move to batch</button>
+            {!isManager && <button className="btn btn-sm bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setFloor({ items: selectedRows.filter((t) => !t.exit_reason) })}><CheckCheck size={14} />Training complete</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('active')}><UserCheck size={14} />Restore</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'handover' })}><ArrowRightLeft size={14} />Handover</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'return' })}><RotateCcw size={14} />Bring back for training</button>}
@@ -962,7 +1003,10 @@ export default function TraineesPage() {
                     <td className="text-slate-600">{fmtMedium(t.joining_date)}</td>
                     <td className="text-slate-600">
                       {t.tcd_lwd ? fmtMedium(t.tcd_lwd) : EXIT_LABELS[t.exit_reason || '']}
-                      {!t.tcd_lwd && !t.exit_reason && t.probable_handover_date && (() => {
+                      {sentToFloor(t) && (
+                        <div className="text-xs font-semibold text-indigo-700">Sent to floor {fmtMedium(t.trainer_handover_date)} · awaiting manager</div>
+                      )}
+                      {!sentToFloor(t) && !t.tcd_lwd && !t.exit_reason && t.probable_handover_date && (() => {
                         const left = Math.round((Date.parse(t.probable_handover_date) - Date.parse(now.date)) / 86400000);
                         return (
                           <div className={`text-xs font-semibold ${left < 0 ? 'text-red-600' : left <= 7 ? 'text-amber-700' : 'text-slate-400'}`}>
@@ -987,6 +1031,9 @@ export default function TraineesPage() {
                         {isManager && (openPeriod(t) && !notJoiningReason(t.exit_reason)
                           ? <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'handover' })} title="Handover or another training status"><ArrowRightLeft size={14} />Handover</button>
                           : <button className="btn-ghost btn-sm" onClick={() => setHandover({ items: [t], mode: 'return' })} title="Bring back for training"><RotateCcw size={14} />Bring back</button>)}
+                        {!isManager && !t.exit_reason && traineeActiveOn(t, now.date) && (sentToFloor(t)
+                          ? <button className="btn-ghost btn-sm" onClick={() => setFloor({ items: [t], undo: true })} title="Undo sent to floor"><Undo2 size={14} />Undo</button>
+                          : <button className="btn-ghost btn-sm text-emerald-700" onClick={() => setFloor({ items: [t] })} title="Training complete: sent to floor"><CheckCheck size={14} />Training complete</button>)}
                         {isManager && <button className="btn-ghost btn-sm" onClick={() => setForm({ ...t, tcd_lwd: t.tcd_lwd || '', exit_reason: t.exit_reason || '' })} aria-label={`Edit ${t.name}`}><Pencil size={14} /></button>}
                         {isManager && (
                           <button className="btn-ghost btn-sm" onClick={() => toggle(t)} aria-label={t.status === 'active' ? `Remove ${t.name}` : `Restore ${t.name}`} title={t.status === 'active' ? 'Remove from attendance' : 'Restore'}>
@@ -1010,6 +1057,10 @@ export default function TraineesPage() {
       {switchItems && <SwitchTrainer items={switchItems.items} title={switchItems.title} trainers={trainers} trainerNames={trainerNames} onClose={() => setSwitchItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {dossier && <DossierImport trainers={trainers} trainees={trainees} onClose={() => setDossier(false)} onDone={(m) => { showToast(m); reload(); }} />}
       {newBatch && <NewBatch trainers={trainers} batches={batches} onClose={() => setNewBatch(false)} onDone={(m, id) => { showToast(m); reload(); if (id) { setBatchFilter(id); setShow('all'); } }} />}
+      {floor && floor.items.length > 0 && (
+        <SentToFloorModal items={floor.items} undo={floor.undo} onClose={() => setFloor(null)}
+          onDone={(msg) => { setFloor(null); clearSelection(); reload(); showToast(msg); }} />
+      )}
       {handover && (
         <HandoverModal items={handover.items} mode={handover.mode} onClose={() => setHandover(null)} trainers={trainers} batches={batches}
           onSetRag={(t, done) => setRagFor({ ...t, _after: done })}

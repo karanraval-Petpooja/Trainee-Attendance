@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Lock, Search } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { addDays, fmtClock, fmtLong, fmtMedium, fmtTime } from '@/lib/dates';
-import { EXIT_LABELS, MARK_OPTIONS, notJoining, notJoiningReason, outOfScope, periodsOf, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
+import { EXIT_LABELS, MARK_OPTIONS, notJoining, notJoiningReason, onRegister, outOfScope, periodsOf, sentToFloor, STATUS, traineeActiveOn, trainerOn, weekOffReason } from '@/lib/status';
 import { useApp } from './AppShell';
 import { ErrorText, Modal, PageLoader, Spinner } from './ui';
 
@@ -55,7 +55,7 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
     // In training that day, or already has an entry that day (kept visible to fix it) — except "not joining"
     // statuses (Resigned, Offer Revoked, Drop Out…): they never appear, even with an old entry.
     trainees.forEach((t) => {
-      if (!outOfScope(t, date) && (traineeActiveOn(t, date) || (records[t.id] && !notJoining(t)))) act.push(t);
+      if (!outOfScope(t, date) && (onRegister(t, date) || (records[t.id] && !notJoining(t)))) act.push(t);
       else { out += 1; outs.push(t); }
     });
     // why each one is not on the register this day (most relevant first)
@@ -64,6 +64,7 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
       const first = ps[0]?.start || t.joining_date;
       if (outOfScope(t, date)) return { rank: 3, label: `With ${trainerNames?.[trainerOn(t, date)] || 'another trainer'}`, tone: 'bg-slate-100 text-slate-700' };
       if (t.status !== 'active') return { rank: 4, label: 'Removed from attendance', tone: 'bg-slate-100 text-slate-700' };
+      if (sentToFloor(t) && date > t.trainer_handover_date) return { rank: 1, label: `Sent to floor · ${fmtMedium(t.trainer_handover_date)} · awaiting manager`, tone: 'bg-indigo-100 text-indigo-800' };
       if (notJoiningReason(t.exit_reason)) return { rank: 0, label: `${EXIT_LABELS[t.exit_reason]}${t.tcd_lwd ? ` · ${fmtMedium(t.tcd_lwd)}` : ''}`, tone: 'bg-red-100 text-red-800' };
       if (t.exit_reason === 'handover' && t.tcd_lwd && date > t.tcd_lwd) return { rank: 1, label: `Handover · ${fmtMedium(t.tcd_lwd)}`, tone: 'bg-emerald-100 text-emerald-800' };
       if (date < first) return { rank: 2, label: `Joins ${fmtMedium(first)}`, tone: 'bg-sky-100 text-sky-800' };
@@ -78,7 +79,8 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
         const start = p.start || t.joining_date;
         const end = p.end || (notJoiningReason(p.reason) ? start : null); // not joining, no date: just the joining day
         const covers = start <= date && (!end || end >= date);
-        return covers || (end && end >= weekBefore && end < date) || (start >= weekBefore && start <= date);
+        const floor = sentToFloor(t) && t.trainer_handover_date >= weekBefore && t.trainer_handover_date < date;
+        return covers || floor || (end && end >= weekBefore && end < date) || (start >= weekBefore && start <= date);
       });
     };
     const outList = outs.filter(relevant).map((t) => ({ t, ...why(t) }))

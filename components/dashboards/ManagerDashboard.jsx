@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { AlertTriangle, CheckCircle2, Clock, GraduationCap, Siren, Sun, UserX, Users } from 'lucide-react';
 import { addDays, fmtClock, fmtDateTime, fmtMedium, fmtShort, rangeKeys } from '@/lib/dates';
-import { groupStatus, scopeTo, traineeActiveOn, weekOffReason } from '@/lib/status';
+import { groupStatus, scopeTo, sentToFloor, traineeActiveOn, weekOffReason } from '@/lib/status';
 import { useAlerts, useAttendance, useTrainees, useTrainers } from '@/lib/hooks';
 import { useApp } from '../AppShell';
 import { Empty, PageLoader, StatCard } from '../ui';
@@ -22,6 +22,14 @@ export default function ManagerDashboard() {
 
   const missed = useMemo(() => alerts.reduce((m, a) => ({ ...m, [a.trainer_id]: (m[a.trainer_id] || 0) + 1 }), {}), [alerts]);
   const all = groupStatus({ dateKey: today, settings, trainees, recordsByTrainee: byTrainee, now });
+  // two-step handover: trainers marked "training complete", the final handover is still to confirm
+  const awaiting = trainees.filter((t) => t.status === 'active' && !t.deleted_at && sentToFloor(t));
+  const awaitingGroups = Object.values(awaiting.reduce((m, t) => {
+    const k = `${t.trainer_id || ''}|${t._batch?.code || '—'}`;
+    (m[k] = m[k] || { trainer: t.trainer_id, batch: t._batch?.code || 'No batch', n: 0, since: t.trainer_handover_date }).n += 1;
+    if (t.trainer_handover_date < m[k].since) m[k].since = t.trainer_handover_date;
+    return m;
+  }, {})).sort((a, b) => a.since.localeCompare(b.since));
   const wo = weekOffReason(today, settings);
 
   const perTrainer = trainers.map((tr) => {
@@ -47,6 +55,27 @@ export default function ManagerDashboard() {
         </div>
         <Link href="/attendance" className="text-sm font-semibold text-ink-700 hover:underline">Open attendance register</Link>
       </div>
+
+      {awaitingGroups.length > 0 && (
+        <section className="panel border-indigo-200 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="text-sm font-bold text-ink-900">Awaiting final handover · {awaiting.length} trainee{awaiting.length === 1 ? '' : 's'}</div>
+              <p className="mt-0.5 text-xs text-slate-500">Trainers marked training complete (sent to floor). Confirm the final handover.</p>
+            </div>
+            <Link href="/trainees?show=awaiting" className="btn-primary btn-sm">Review &amp; confirm</Link>
+          </div>
+          <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
+            {awaitingGroups.map((g) => (
+              <li key={`${g.trainer}|${g.batch}`} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-700">{g.batch}</span>
+                <span className="min-w-0 flex-1 truncate">{trainers.find((x) => x.id === g.trainer)?.name || 'No trainer'}</span>
+                <span className="text-xs text-slate-500">{g.n} trainee{g.n === 1 ? '' : 's'} · since {fmtMedium(g.since)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4 xl:grid-cols-8">
         <StatCard label="Trainers" value={trainers.length} icon={Users} />
