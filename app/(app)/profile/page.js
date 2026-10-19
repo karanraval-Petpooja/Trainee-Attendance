@@ -1,4 +1,5 @@
 'use client';
+import PhoneNotifications from '@/components/PhoneNotifications';
 import { useEffect, useState } from 'react';
 import { useApp } from '@/components/AppShell';
 import { ErrorText, PageHeader, Spinner } from '@/components/ui';
@@ -40,6 +41,7 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <PageHeader title="Profile" />
+      <PhoneNotifications compact />
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="panel p-6 lg:col-span-2">
           <div className="flex items-center gap-4">

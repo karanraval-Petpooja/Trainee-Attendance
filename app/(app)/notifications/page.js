@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { BellRing } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { Empty, PageHeader } from '@/components/ui';
+import PhoneNotifications from '@/components/PhoneNotifications';
 import { NOTIF } from '@/lib/status';
 import { fmtDateTime, timeAgo } from '@/lib/dates';
 
@@ -21,6 +22,8 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       <PageHeader title="Notifications" subtitle={unread ? `${unread} unread` : 'You’re all caught up.'}
         actions={unread > 0 && <button className="btn-secondary" onClick={markAllRead}>Mark all as read</button>} />
+
+      <PhoneNotifications />
 
       {settings.browser_notifications_enabled && perm === 'default' && (
         <div className="panel flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">

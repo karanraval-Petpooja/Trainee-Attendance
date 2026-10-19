@@ -1,7 +1,7 @@
 /* Trainer Attendance – service worker.
    Makes the app installable and shows an offline page when there is no internet.
    It NEVER stores attendance or any data: every page and every API / database call always goes to the network. */
-const VERSION = 'ta-v1';
+const VERSION = 'ta-v2';
 const STATIC = `static-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
@@ -37,4 +37,26 @@ self.addEventListener('fetch', (event) => {
       return res;
     }));
   }
+});
+
+// ---- Phone notifications (Web Push) ----
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch { d = { body: event.data && event.data.text() }; }
+  event.waitUntil(self.registration.showNotification(d.title || 'Trainer Attendance', {
+    body: d.body || '',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    tag: d.tag || undefined,
+    data: { url: d.url || '/notifications' },
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.url) || '/notifications', self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ('focus' in c) { c.navigate(url); return c.focus(); } }
+    return self.clients.openWindow(url);
+  }));
 });
