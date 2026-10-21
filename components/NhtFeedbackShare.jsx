@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { Copy, Download, ExternalLink, MessageCircle, Share2, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Copy, Download, ExternalLink, Laptop, MessageCircle, Monitor, Share2, X } from 'lucide-react';
 import { formById } from '@/lib/feedbackForms';
 import { useApp } from './AppShell';
 
@@ -24,15 +24,72 @@ export default function NhtFeedbackShare({ compact = false, formId = 'nht' }) {
       await copy(NHT_MESSAGE, 'Message with link');
     } catch (e) { if (e?.name !== 'AbortError') copy(NHT_MESSAGE, 'Message with link'); }
   };
-  const whatsapp = `https://wa.me/?text=${encodeURIComponent(NHT_MESSAGE)}`;
+  // WhatsApp: open what the person already uses (no new login)
+  //  phone → the WhatsApp app; computer → WhatsApp Desktop app or WhatsApp Web (same browser = already logged in)
+  const [isPhone, setIsPhone] = useState(false);
+  const [waMode, setWaMode] = useState(null); // 'app' | 'web' (computer only, remembered)
+  const [waAsk, setWaAsk] = useState(false);
+  useEffect(() => {
+    setIsPhone(/android|iphone|ipad|ipod/i.test(navigator.userAgent));
+    try { setWaMode(localStorage.getItem('waMode')); } catch { /* ignore */ }
+  }, []);
+  const text = encodeURIComponent(NHT_MESSAGE);
+  const openWhatsApp = (mode) => {
+    if (isPhone) {
+      window.location.href = `whatsapp://send?text=${text}`;                 // the installed app, straight away
+      setTimeout(() => { if (document.visibilityState === 'visible') window.location.href = `https://wa.me/?text=${text}`; }, 1500); // no app: fallback
+      return;
+    }
+    const m = mode || waMode;
+    if (!m) { setWaAsk(true); return; }
+    try { localStorage.setItem('waMode', m); } catch { /* ignore */ }
+    setWaMode(m); setWaAsk(false);
+    if (m === 'app') {
+      window.location.href = `whatsapp://send?text=${text}`;                 // WhatsApp Desktop opens directly
+      showToast('Opening WhatsApp Desktop… If nothing opens, choose WhatsApp Web.');
+    } else {
+      window.open(`https://web.whatsapp.com/send?text=${text}`, 'whatsapp-web'); // reuses the open WhatsApp Web tab
+    }
+  };
+  const fileName = `${form.name.replace(/[^a-z0-9]+/gi, '-')}-Form.jpeg`;
+  const Tile = ({ icon: Icon, label, sub, tone, onClick, href, newTab }) => {
+    const body = (
+      <>
+        <span className={`grid h-11 w-11 place-items-center rounded-2xl ${tone}`}><Icon size={20} /></span>
+        <span className="mt-1.5 text-xs font-semibold text-ink-900">{label}</span>
+        {sub && <span className="text-[10px] text-slate-400">{sub}</span>}
+      </>
+    );
+    const cls = 'flex min-w-[78px] flex-1 flex-col items-center rounded-2xl border border-slate-200 bg-white px-2 py-2.5 text-center hover:border-slate-300 hover:shadow-sm';
+    return href
+      ? <a className={cls} href={href} {...(newTab ? { target: '_blank', rel: 'noreferrer' } : { download: fileName })}>{body}</a>
+      : <button type="button" className={cls} onClick={onClick}>{body}</button>;
+  };
 
   const buttons = (
-    <div className={`flex flex-wrap gap-2 ${compact ? '' : 'mt-4'}`}>
-      <button type="button" className="btn-primary btn-sm" onClick={share}><Share2 size={14} />Share</button>
-      <a className="btn-secondary btn-sm" href={whatsapp} target="_blank" rel="noreferrer"><MessageCircle size={14} />WhatsApp</a>
-      <button type="button" className="btn-secondary btn-sm" onClick={() => copy(NHT_FORM_URL, 'Form link')}><Copy size={14} />Copy link</button>
-      <a className="btn-secondary btn-sm" href={NHT_POSTER} download={`${form.name.replace(/[^a-z0-9]+/gi, '-')}-Form.jpeg`}><Download size={14} />Download QR poster</a>
-      <a className="btn-ghost btn-sm" href={NHT_FORM_URL} target="_blank" rel="noreferrer"><ExternalLink size={14} />Open form</a>
+    <div className={compact ? '' : 'mt-4'}>
+      <div className="flex flex-wrap gap-2">
+        <Tile icon={Share2} label="Share" sub="poster + link" tone="bg-ink-800 text-white" onClick={share} />
+        <Tile icon={MessageCircle} label="WhatsApp" sub={isPhone ? 'app' : waMode === 'app' ? 'desktop app' : waMode === 'web' ? 'WhatsApp Web' : 'app or web'} tone="bg-[#25D366] text-white" onClick={() => openWhatsApp()} />
+        <Tile icon={Copy} label="Copy link" tone="bg-indigo-100 text-indigo-700" onClick={() => copy(NHT_FORM_URL, 'Form link')} />
+        <Tile icon={Download} label="Download" sub="QR poster" tone="bg-amber-100 text-amber-700" href={NHT_POSTER} />
+        <Tile icon={ExternalLink} label="Open form" tone="bg-sky-100 text-sky-700" href={NHT_FORM_URL} newTab />
+      </div>
+      {!isPhone && waAsk && (
+        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+          <div className="text-sm font-semibold text-ink-900">Open WhatsApp with…</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button type="button" className="btn btn-sm bg-[#25D366] text-white hover:brightness-95" onClick={() => openWhatsApp('app')}><Monitor size={14} />WhatsApp Desktop app</button>
+            <button type="button" className="btn btn-sm border border-emerald-300 bg-white text-emerald-800" onClick={() => openWhatsApp('web')}><Laptop size={14} />WhatsApp Web</button>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">Your choice is remembered. WhatsApp Web opens in this browser, so if you are already logged in there, no login is needed.</p>
+        </div>
+      )}
+      {!isPhone && waMode && !waAsk && (
+        <button type="button" className="mt-2 text-xs text-slate-500 hover:underline" onClick={() => setWaAsk(true)}>
+          WhatsApp opens in {waMode === 'app' ? 'the desktop app' : 'WhatsApp Web'} · change
+        </button>
+      )}
     </div>
   );
 
