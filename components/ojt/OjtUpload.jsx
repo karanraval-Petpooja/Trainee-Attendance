@@ -19,6 +19,10 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   const [passPercent, setPassPercent] = useState(70);
   const [type, setType] = useState('OJT');
   const [withScores, setWithScores] = useState(false);
+  // Upskill / Refresher can skip attendance and only be pushed to the Training Log
+  const [takeAttendance, setTakeAttendance] = useState(true);
+  const pushable = ['Upskill', 'Refresher'].includes(type);
+  const attendanceOn = !pushable || takeAttendance;
   // Session taken by the trainer, and the minimum a trainee must attend to be Present
   const [sesH, setSesH] = useState(2);
   const [sesM, setSesM] = useState(0);
@@ -67,7 +71,11 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   };
   const deptList = useMemo(() => Object.entries(contacts.reduce((m, c) => { if (c.department) m[c.department] = (m[c.department] || 0) + 1; return m; }, {}))
     .sort((a, b) => a[0].localeCompare(b[0])), [contacts]);
-  const people = useMemo(() => (parsed ? addNotAttended(parsed.participants, contacts, depts, { withScores }) : []), [parsed, contacts, depts, withScores]);
+  const people = useMemo(() => {
+    if (!parsed) return [];
+    if (!attendanceOn) return parsed.participants.map(({ belowMinimum, ...p }) => ({ ...p, attendance: null, not_attended: false })); // list only
+    return addNotAttended(parsed.participants, contacts, depts, { withScores });
+  }, [parsed, contacts, depts, withScores, attendanceOn]);
   const notAttended = people.filter((p) => p.not_attended).length;
   const sum = useMemo(() => (parsed ? summarizeOjt(people) : null), [parsed, people]);
 
@@ -115,12 +123,13 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
   const save = async () => {
     if (!parsed?.participants.length && !people.length) { setError('Upload a file first.'); return; }
     if (!title.trim() || !date) { setError('Enter a session name and date.'); return; }
-    if (requiredMinutes > sessionMinutes && sessionMinutes > 0) { setError('The minimum time cannot be longer than the session.'); return; }
+    if (attendanceOn && requiredMinutes > sessionMinutes && sessionMinutes > 0) { setError('The minimum time cannot be longer than the session.'); return; }
     setSaving(true); setError('');
     const { data: s, error: e1 } = await sb().from('ojt_sessions').insert({
       title: title.trim(), session_date: date, trainer_id: trainerId || null, pass_percent: Number(passPercent) || 70,
       source_file: file?.name || null, created_by: profile.id, session_type: type,
-      session_minutes: sessionMinutes || null, min_present_minutes: requiredMinutes || null,
+      session_minutes: attendanceOn ? sessionMinutes || null : null, min_present_minutes: attendanceOn ? requiredMinutes || null : null,
+      attendance_tracked: attendanceOn,
       department: depts.length ? depts.join(', ') : null,
     }).select().single();
     if (e1) { setSaving(false); setError(e1.message); return; }
@@ -144,6 +153,7 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
         {reading && <p className="mt-2 text-xs text-slate-500"><Spinner size={12} /> Reading…</p>}
       </div>
 
+      {attendanceOn && (
       <div className="mt-4 rounded-xl border border-slate-200 p-4">
         <div className="text-sm font-bold text-ink-900">Session time</div>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -165,6 +175,7 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
         {autoNote && <p className="mt-2 text-xs text-emerald-700">{autoNote}</p>}
         <p className="mt-2 text-xs text-red-700">Anyone below {Math.floor(requiredMinutes / 60)} hr {requiredMinutes % 60} min, even by one minute, is marked <b>Absent</b> (in red). This replaces the P / A column in the sheet.</p>
       </div>
+      )}
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
@@ -173,6 +184,20 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
             <option value="OJT">OJT</option><option value="Upskill">Upskill</option><option value="PIP">PIP</option><option value="Refresher">Refresher</option>
           </select>
         </div>
+        {pushable && (
+          <div className="sm:col-span-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <button type="button" role="switch" aria-checked={takeAttendance} onClick={() => setTakeAttendance(!takeAttendance)}
+              className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors ${takeAttendance ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${takeAttendance ? 'left-[22px]' : 'left-0.5'}`} />
+            </button>
+            <div className="text-sm">
+              <div className="font-semibold text-ink-900">Take attendance {takeAttendance ? '(on)' : '(off)'}</div>
+              <div className="text-xs text-slate-500">{takeAttendance
+                ? 'Session time and minimum time decide Present / Absent; department members not in the file are added as Not attended.'
+                : 'Attendance is skipped: the participant list is saved as it is and you go straight to “Push to Training Log” (everyone pushed as Completed).'}</div>
+            </div>
+          </div>
+        )}
         <div><label className="label" htmlFor="ojt-title">Session name</label><input id="ojt-title" className="input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. OJT – POS Billing" /></div>
         <div><label className="label" htmlFor="ojt-date">Session date</label><input id="ojt-date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} /></div>
         {isManager && (
@@ -184,6 +209,7 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
             </select>
           </div>
         )}
+        {attendanceOn && (
         <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <label className="label mb-0" htmlFor="ojt-dept">Department (from Contact Details)</label>
@@ -216,6 +242,7 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
             </>
           )}
         </div>
+        )}
         <div className="sm:col-span-2 rounded-xl border border-slate-200 p-3">
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-800">
             <input type="checkbox" className="h-4 w-4 accent-ink-800" checked={withScores}
@@ -235,8 +262,9 @@ export default function OjtUpload({ trainers, onClose, onSaved }) {
         <>
           <div className="mt-4 flex flex-wrap gap-2 text-xs">
             <span className="rounded-full bg-ink-50 px-3 py-1 font-semibold text-ink-800">{sum.participants} participants</span>
-            <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">{sum.present} present</span>
-            <span className="rounded-full bg-red-100 px-3 py-1 font-semibold text-red-800">{sum.absent - notAttended} absent (below {Math.floor(requiredMinutes / 60)} hr {requiredMinutes % 60} min)</span>
+            {!attendanceOn && <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700">Attendance not taken · all pushed as Completed</span>}
+            {attendanceOn && <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">{sum.present} present</span>}
+            {attendanceOn && <span className="rounded-full bg-red-100 px-3 py-1 font-semibold text-red-800">{sum.absent - notAttended} absent (below {Math.floor(requiredMinutes / 60)} hr {requiredMinutes % 60} min)</span>}
             {notAttended > 0 && <span className="rounded-full bg-red-600 px-3 py-1 font-semibold text-white">{notAttended} not attended (not in the file)</span>}
             {withScores && <>
               <span className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-800">{sum.pass} pass</span>

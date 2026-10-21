@@ -61,7 +61,7 @@ export async function POST(req) {
         locationType: !location ? '' : /ahmedabad/i.test(location) ? 'Ahmedabad' : 'Outside Ahmedabad',
         designation: c.designation || '',
         department: c.department || p.department || '',
-        completion: p.attendance === 'P' ? 'Completed' : 'Not Completed',
+        completion: s.attendance_tracked === false || p.attendance === 'P' ? 'Completed' : 'Not Completed', // attendance skipped → Completed
       };
     });
 

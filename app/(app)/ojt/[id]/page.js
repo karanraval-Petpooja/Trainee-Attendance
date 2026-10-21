@@ -19,7 +19,8 @@ function PushToSheet({ session, rows, trainerName, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const chosen = rows.filter((r) => picked.has(r.id));
-  const done = chosen.filter((r) => r.attendance === 'P').length;
+  const listOnly = session.attendance_tracked === false; // attendance skipped: everyone counts as Completed
+  const done = listOnly ? chosen.length : chosen.filter((r) => r.attendance === 'P').length;
   const allOn = picked.size === rows.length;
   const toggle = (id) => setPicked((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const push = async () => {
@@ -64,7 +65,7 @@ function PushToSheet({ session, rows, trainerName, onClose, onDone }) {
                 <td className="w-10 px-3 py-2"><input type="checkbox" className="h-4 w-4 accent-ink-800" checked={picked.has(r.id)} onChange={() => toggle(r.id)} aria-label={`Push ${r.full_name}`} /></td>
                 <td className="py-2 pr-2"><div className="font-semibold">{r.full_name}</div><div className="text-xs text-slate-500">{r.email || ''}</div></td>
                 <td className="py-2 pr-3 text-right text-xs">
-                  {r.attendance === 'P'
+                  {listOnly || r.attendance === 'P'
                     ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800">Completed</span>
                     : <span className="rounded-full bg-red-100 px-2 py-0.5 font-semibold text-red-800">{r.not_attended ? 'Not attended' : 'Not Completed'}</span>}
                 </td>
@@ -152,6 +153,11 @@ export default function OjtSessionPage() {
           </>
         )} />
 
+      {session.attendance_tracked === false && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <b>Attendance not taken</b> for this session: the participant list is kept as it was uploaded, and everyone is pushed to the Training Log as <b>Completed</b>.
+        </div>
+      )}
       <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${scored ? 'lg:grid-cols-6' : 'lg:grid-cols-4'}`}>
         <StatCard label="Participants" value={sum.participants} />
         <StatCard label="Present" value={sum.present} tone="green" hint={sum.attendancePct === null ? '' : `${sum.attendancePct}%`} />
