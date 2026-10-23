@@ -4,6 +4,7 @@ import { useApp } from '@/components/AppShell';
 import { ErrorText, PageHeader, Spinner } from '@/components/ui';
 import { sb } from '@/lib/supabase';
 import DossierConnection from '@/components/DossierConnection';
+import EgressCard from '@/components/EgressCard';
 
 const TIMEZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'UTC'];
 
@@ -107,6 +108,7 @@ export default function SettingsPage() {
       </section>
 
       <DossierConnection />
+      <EgressCard />
     </div>
   );
 }
