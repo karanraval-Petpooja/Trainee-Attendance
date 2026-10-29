@@ -3,11 +3,12 @@ import { useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileSpreadsheet, Search } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { Empty, PageHeader, PageLoader, Spinner } from '@/components/ui';
-import { useAttendance, useTrainees, useTrainers } from '@/lib/hooks';
+import { fetchAll, useAttendance, useTrainees, useTrainers } from '@/lib/hooks';
+import { sb } from '@/lib/supabase';
 import { addMonths, endOfMonth, MONTHS, pad, startOfMonth } from '@/lib/dates';
 import { scopeTo } from '@/lib/status';
 import {
-  buildMonthlySheet, CELL, CELL_STYLE, downloadMonthlySheetXlsx, fmtDayHeader, inMonth, TOTAL_HEADERS,
+  buildMonthlySheet, CELL, CELL_STYLE, downloadMonthlySheetXlsx, downloadMonthsXlsx, fmtDayHeader, inMonth, TOTAL_HEADERS,
 } from '@/lib/monthlySheet';
 
 const STAGES = { all: 'Everyone', training: 'In training', completed: 'Handed over', exited: 'Resigned / not certified / revoked' };
@@ -21,6 +22,10 @@ export default function MonthlySheetPage() {
   const [rm, setRm] = useState('all');
   const [stage, setStage] = useState('all');
   const [downloading, setDownloading] = useState(false);
+  // several months in one Excel file
+  const [fromKey, setFromKey] = useState(addMonths(startOfMonth(now.date), -2));
+  const [toKey, setToKey] = useState(startOfMonth(now.date));
+  const [multiBusy, setMultiBusy] = useState('');
   const { trainees, loading } = useTrainees(isManager ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
   const { trainers } = useTrainers();
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
@@ -51,6 +56,51 @@ export default function MonthlySheetPage() {
   const years = [];
   for (let yy = Number(now.date.slice(0, 4)) + 1; yy >= Number(now.date.slice(0, 4)) - 3; yy -= 1) years.push(yy);
 
+  // filters that apply to every month (same as on screen)
+  const keepRow = (r, list) => {
+    const t = list.find((x) => x.id === r.id);
+    const st = !t?.exit_reason ? 'training' : t.exit_reason === 'handover' ? 'completed' : 'exited';
+    return (rm === 'all' || r.reportingManager === rm) && (stage === 'all' || st === stage)
+      && [r.name, r.code, r.reportingManager].some((v) => String(v).toLowerCase().includes(q.toLowerCase()));
+  };
+  const monthList = [];
+  for (let k = fromKey <= toKey ? fromKey : toKey; k <= (fromKey <= toKey ? toKey : fromKey) && monthList.length < 12; k = addMonths(k, 1)) monthList.push(k);
+  const downloadMonths = async () => {
+    setMultiBusy('Preparing…');
+    try {
+      const out = [];
+      for (const k of monthList) {
+        setMultiBusy(`Preparing ${MONTHS[Number(k.slice(5, 7)) - 1]} ${k.slice(0, 4)}…`);
+        const list = scoped.filter((t) => inMonth(t, k) && (batchId === 'all' || t.batch_id === batchId));
+        const ids = list.map((t) => t.id);
+        const recs = {};
+        for (let i = 0; i < ids.length; i += 100) {
+          const part = await fetchAll(() => sb().from('attendance').select('trainee_id, attendance_date, status, is_late, source')
+            .in('trainee_id', ids.slice(i, i + 100)).gte('attendance_date', k).lte('attendance_date', endOfMonth(k)));
+          part.forEach((r) => { (recs[r.trainee_id] ||= {})[r.attendance_date] = r; });
+        }
+        const sh = buildMonthlySheet({ monthKey: k, trainees: list, recordsByTrainee: recs, trainerNames, settings, now });
+        out.push({ monthKey: k, sheet: { ...sh, rows: sh.rows.filter((r) => keepRow(r, list)) } });
+      }
+      await downloadMonthsXlsx(out);
+      showToast(`Excel downloaded: ${out.length} month${out.length === 1 ? '' : 's'} + Summary.`);
+    } catch (e) {
+      showToast(`Download failed: ${e.message}`, 'error');
+    } finally {
+      setMultiBusy('');
+    }
+  };
+  const monthPick = (value, set, id) => (
+    <div className="flex gap-1">
+      <select id={id} className="input" value={Number(value.slice(5, 7)) - 1} onChange={(e) => set(`${value.slice(0, 4)}-${pad(Number(e.target.value) + 1)}-01`)}>
+        {MONTHS.map((name, i) => <option key={name} value={i}>{name}</option>)}
+      </select>
+      <select className="input" value={Number(value.slice(0, 4))} onChange={(e) => set(`${e.target.value}-${value.slice(5, 7)}-01`)} aria-label="Year">
+        {years.map((yy) => <option key={yy} value={yy}>{yy}</option>)}
+      </select>
+    </div>
+  );
+
   const download = async () => {
     setDownloading(true);
     try {
@@ -74,6 +124,16 @@ export default function MonthlySheetPage() {
           </button>
         )}
       />
+
+      <div className="panel flex flex-col gap-3 p-4 lg:flex-row lg:items-end">
+        <div className="text-sm font-bold text-ink-900 lg:mr-2 lg:self-center">Several months</div>
+        <div><label className="label" htmlFor="mm-from">From</label>{monthPick(fromKey, setFromKey, 'mm-from')}</div>
+        <div><label className="label" htmlFor="mm-to">To</label>{monthPick(toKey, setToKey, 'mm-to')}</div>
+        <div className="flex-1 text-xs text-slate-500 lg:self-center">{monthList.length} month{monthList.length === 1 ? '' : 's'} in one Excel file: a Summary tab (paid days per month) and one tab per month. The filters below apply to every month{monthList.length >= 12 ? ' (up to 12 months at a time)' : ''}.</div>
+        <button className="btn-secondary" onClick={downloadMonths} disabled={!!multiBusy}>
+          {multiBusy ? <Spinner size={16} /> : <FileSpreadsheet size={16} />}{multiBusy || 'Download months'}
+        </button>
+      </div>
 
       <div className="panel flex flex-col gap-3 p-4 lg:flex-row lg:items-end">
         <div className="flex items-end gap-2">
