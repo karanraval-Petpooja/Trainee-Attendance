@@ -13,7 +13,8 @@ const STATUSES = ['present', 'absent', 'half_day', 'holiday', 'week_off', 'not_f
 export default function HistoryPage() {
   const { profile, settings, now, tz } = useApp();
   const isManager = profile.role === 'manager';
-  const { trainees, loading: tLoading } = useTrainees(isManager ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
+  const canAll = isManager || !!profile.report_access; // managers, and trainers given "Reports for all trainees"
+  const { trainees, loading: tLoading } = useTrainees(canAll ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
   const { trainers } = useTrainers();
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
   const [trainerId, setTrainerId] = useState('all');
@@ -52,9 +53,9 @@ export default function HistoryPage() {
   }, [tooLong, start, effectiveEnd, list, settings, byTrainee, now, status]);
 
   const table = () => {
-    const head = ['Date', 'Day', 'E Code', 'Trainee', 'Batch', ...(isManager ? ['Trainer'] : []), 'Status', 'Marked at', 'Late'];
+    const head = ['Date', 'Day', 'E Code', 'Trainee', 'Batch', ...(canAll ? ['Trainer'] : []), 'Status', 'Marked at', 'Late'];
     const lines = rows.map(({ k, t, info }) => [
-      fmtMedium(k), fmtDay(k), t.employee_code || '', t.name, t._batch?.code || '', ...(isManager ? [trainerNames[trainerOn(t, k)] || ''] : []),
+      fmtMedium(k), fmtDay(k), t.employee_code || '', t.name, t._batch?.code || '', ...(canAll ? [trainerNames[trainerOn(t, k)] || ''] : []),
       STATUS[info.status].short, info.record ? fmtTime(info.record.marked_at, tz) : '', info.record?.is_late ? 'Yes' : '',
     ]);
     return { head, lines };
@@ -78,7 +79,7 @@ export default function HistoryPage() {
         )} />
 
       <div className="panel grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        {isManager && (
+        {canAll && (
           <div>
             <label className="label" htmlFor="h-trainer">Trainer</label>
             <select id="h-trainer" className="input" value={trainerId} onChange={(e) => { setTrainerId(e.target.value); setTraineeId('all'); }}>
@@ -123,14 +124,14 @@ export default function HistoryPage() {
             : rows.length === 0 ? <Empty title="No records for these filters">Try a different date range or status.</Empty> : (
               <div className="table-wrap max-h-[70vh] overflow-y-auto">
                 <table className="tbl">
-                  <thead className="sticky top-0 z-10"><tr><th>Date</th><th>Day</th><th>Trainee</th>{isManager && <th>Trainer</th>}<th>Status</th><th>Marked at</th></tr></thead>
+                  <thead className="sticky top-0 z-10"><tr><th>Date</th><th>Day</th><th>Trainee</th>{canAll && <th>Trainer</th>}<th>Status</th><th>Marked at</th></tr></thead>
                   <tbody>
                     {rows.map(({ k, t, info }) => (
                       <tr key={`${k}-${t.id}`}>
                         <td className="font-semibold text-slate-800">{fmtMedium(k)}</td>
                         <td className="text-slate-500">{fmtDay(k)}</td>
                         <td>{t.name}<span className="ml-1 text-xs text-slate-400">{[t.employee_code, t._batch?.code].filter(Boolean).join(' · ')}</span></td>
-                        {isManager && <td className="text-slate-500">{trainerNames[trainerOn(t, k)] || '—'}</td>}
+                        {canAll && <td className="text-slate-500">{trainerNames[trainerOn(t, k)] || '—'}</td>}
                         <td><StatusChip status={info.status} late={info.record?.is_late} /></td>
                         <td className="text-slate-500">{info.record ? fmtTime(info.record.marked_at, tz) : '—'}</td>
                       </tr>

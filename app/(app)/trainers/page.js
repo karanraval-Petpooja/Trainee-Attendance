@@ -87,6 +87,16 @@ export default function TrainersPage() {
   const batch = (id) => scopeTo(trainees, id).filter((t) => traineeActiveOn(t, now.date)).length;
   const filtered = trainers.filter((t) => [t.name, t.email, t.employee_id].some((v) => v?.toLowerCase().includes(q.toLowerCase())));
 
+  // "Reports for all trainees": this trainer may see and download every trainee's attendance (read-only) for HR
+  const toggleReports = async (t) => {
+    const next = !t.report_access;
+    if (next && !window.confirm(`Allow ${t.name} to see and download the attendance of ALL trainees (Monthly Sheet, History) to share with HR?\n\nThey still mark and change only their own trainees.`)) return;
+    const { error } = await sb().from('profiles').update({ report_access: next }).eq('id', t.id);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(next ? `${t.name} can now take reports for all trainees.` : `${t.name} now sees only their own trainees in reports.`);
+    reload();
+  };
+
   const toggle = async (t) => {
     const next = t.status === 'active' ? 'inactive' : 'active';
     if (next === 'inactive' && !window.confirm(`Deactivate ${t.name}? They won’t be able to sign in.`)) return;
@@ -109,7 +119,7 @@ export default function TrainersPage() {
         {loading ? <PageLoader /> : filtered.length === 0 ? <Empty title="No trainers yet">Add a trainer so they can start marking attendance.</Empty> : (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Name</th><th>Employee ID</th><th>Trainees in training</th><th>Missed marking days</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Employee ID</th><th>Trainees in training</th><th>Missed marking days</th><th title="Can see and download every trainee's attendance for HR">Reports (all trainees)</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
               <tbody>
                 {filtered.map((t) => (
                   <tr key={t.id} className={t.status !== 'active' ? 'opacity-60' : ''}>
@@ -117,6 +127,13 @@ export default function TrainersPage() {
                     <td className="text-slate-600">{t.employee_id || '—'}</td>
                     <td><Link href={`/trainees`} className="font-semibold text-ink-700 hover:underline">{batch(t.id)}</Link></td>
                     <td className="font-bold text-slate-700">{missed[t.id] || 0}</td>
+                    <td>
+                      <button type="button" role="switch" aria-checked={!!t.report_access} onClick={() => toggleReports(t)} disabled={t.status !== 'active'}
+                        title={t.report_access ? 'Can take reports for all trainees: click to remove' : 'Click to allow reports for all trainees'}
+                        className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${t.report_access ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${t.report_access ? 'left-[22px]' : 'left-0.5'}`} />
+                      </button>
+                    </td>
                     <td><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${t.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>{t.status === 'active' ? 'Active' : 'Inactive'}</span></td>
                     <td>
                       <div className="flex justify-end gap-1">

@@ -16,6 +16,7 @@ const STAGES = { all: 'Everyone', training: 'In training', completed: 'Handed ov
 export default function MonthlySheetPage() {
   const { profile, settings, now, showToast } = useApp();
   const isManager = profile.role === 'manager';
+  const canAll = isManager || !!profile.report_access; // managers, and trainers given "Reports for all trainees"
   const [trainerId, setTrainerId] = useState('all');
   const [monthKey, setMonthKey] = useState(startOfMonth(now.date));
   const [q, setQ] = useState('');
@@ -32,7 +33,7 @@ export default function MonthlySheetPage() {
   }, []);
   const [toKey, setToKey] = useState(startOfMonth(now.date));
   const [multiBusy, setMultiBusy] = useState('');
-  const { trainees, loading } = useTrainees(isManager ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
+  const { trainees, loading } = useTrainees(canAll ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
   const { trainers } = useTrainers();
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
@@ -165,7 +166,7 @@ export default function MonthlySheetPage() {
             <input id="ms-q" className="input pl-10" placeholder="Name, E Code or reporting manager" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </div>
-        {isManager && (
+        {canAll && (
           <div className="lg:w-48">
             <label className="label" htmlFor="ms-trainer">Trainer</label>
             <select id="ms-trainer" className="input" value={trainerId} onChange={(e) => setTrainerId(e.target.value)}>
