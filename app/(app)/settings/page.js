@@ -5,6 +5,7 @@ import { ErrorText, PageHeader, Spinner } from '@/components/ui';
 import { sb } from '@/lib/supabase';
 import DossierConnection from '@/components/DossierConnection';
 import EgressCard from '@/components/EgressCard';
+import PublicHolidaysCard from '@/components/PublicHolidaysCard';
 
 const TIMEZONES = ['Asia/Kolkata', 'Asia/Dubai', 'Asia/Singapore', 'Europe/London', 'America/New_York', 'UTC'];
 
@@ -107,6 +108,7 @@ export default function SettingsPage() {
         <Toggle id="t-4sat" label="4th Saturday" hint="Calculated for every month automatically." checked={f.fourth_saturday_week_off} onChange={set('fourth_saturday_week_off')} />
       </section>
 
+      <PublicHolidaysCard />
       <DossierConnection />
       <EgressCard />
     </div>
