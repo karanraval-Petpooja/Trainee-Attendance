@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, FileSpreadsheet, Search } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { Empty, PageHeader, PageLoader, Spinner } from '@/components/ui';
@@ -23,7 +23,13 @@ export default function MonthlySheetPage() {
   const [stage, setStage] = useState('all');
   const [downloading, setDownloading] = useState(false);
   // several months in one Excel file
-  const [fromKey, setFromKey] = useState(addMonths(startOfMonth(now.date), -2));
+  const [fromKey, setFromKey] = useState(addMonths(startOfMonth(now.date), -1)); // last month → this month
+  // Contact Details (Active + Left) to look up E Codes by email
+  const [contacts, setContacts] = useState([]);
+  useEffect(() => {
+    fetchAll(() => sb().from('contacts').select('name, employee_code, official_email, personal_email, active, employment, joining_date'))
+      .then(setContacts).catch(() => setContacts([]));
+  }, []);
   const [toKey, setToKey] = useState(startOfMonth(now.date));
   const [multiBusy, setMultiBusy] = useState('');
   const { trainees, loading } = useTrainees(isManager ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
@@ -38,8 +44,8 @@ export default function MonthlySheetPage() {
   const { byTrainee, loading: aLoading } = useAttendance(ids, monthKey, endOfMonth(monthKey));
 
   const sheet = useMemo(() => buildMonthlySheet({
-    monthKey, trainees: monthTrainees, recordsByTrainee: byTrainee, trainerNames, settings, now,
-  }), [monthKey, monthTrainees, byTrainee, trainerNames, settings, now]);
+    monthKey, trainees: monthTrainees, recordsByTrainee: byTrainee, trainerNames, settings, now, contacts,
+  }), [monthKey, monthTrainees, byTrainee, trainerNames, settings, now, contacts]);
 
   const reportingManagers = useMemo(() => [...new Set(sheet.rows.map((r) => r.reportingManager).filter(Boolean))].sort(), [sheet.rows]);
   const stageOf = (id) => {
@@ -79,7 +85,7 @@ export default function MonthlySheetPage() {
             .in('trainee_id', ids.slice(i, i + 100)).gte('attendance_date', k).lte('attendance_date', endOfMonth(k)));
           part.forEach((r) => { (recs[r.trainee_id] ||= {})[r.attendance_date] = r; });
         }
-        const sh = buildMonthlySheet({ monthKey: k, trainees: list, recordsByTrainee: recs, trainerNames, settings, now });
+        const sh = buildMonthlySheet({ monthKey: k, trainees: list, recordsByTrainee: recs, trainerNames, settings, now, contacts });
         out.push({ monthKey: k, sheet: { ...sh, rows: sh.rows.filter((r) => keepRow(r, list)) } });
       }
       await downloadMonthsXlsx(out);
@@ -215,7 +221,7 @@ export default function MonthlySheetPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="hover:[&>td]:brightness-[0.97]">
-                    <td className="sticky z-10 whitespace-nowrap border-b border-r border-slate-200 bg-white px-3 py-2 text-slate-600" style={{ left: 0 }}>{r.code || '—'}</td>
+                    <td className={`sticky z-10 whitespace-nowrap border-b border-r border-slate-200 px-3 py-2 ${r.codeCheck ? 'bg-yellow-200 font-semibold text-yellow-900' : 'bg-white text-slate-600'}`} style={{ left: 0 }} title={r.codeCheck || undefined}>{r.code || '—'}</td>
                     <td className="sticky z-10 whitespace-nowrap border-b border-r border-slate-200 bg-white px-3 py-2 font-semibold text-slate-800" style={{ left: 70 }}>{r.name}</td>
                     <td className="whitespace-nowrap border-b border-r border-slate-200 px-3 py-2 text-slate-600">{r.dojLabel}</td>
                     <td className="whitespace-nowrap border-b border-r border-slate-200 px-3 py-2 text-slate-600">{r.tcdLabel}</td>

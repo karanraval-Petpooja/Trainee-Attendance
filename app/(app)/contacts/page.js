@@ -23,6 +23,7 @@ function UploadContacts({ onClose, onSaved }) {
   const [src, setSrc] = useState(null); // { header, rows, sheetName }
   const [paste, setPaste] = useState('');
   const [fullList, setFullList] = useState(true);
+  const [listType, setListType] = useState('active'); // 'active' | 'left'
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const parsed = useMemo(() => {
@@ -47,10 +48,10 @@ function UploadContacts({ onClose, onSaved }) {
     setSaving(true); setError('');
     try {
       const runId = `upload-${Date.now()}`;
-      const res = await saveContacts(sb(), parsed.contacts, { runId });
+      const res = await saveContacts(sb(), parsed.contacts, { runId, status: listType });
       let off = 0;
-      if (fullList) {
-        const { data } = await sb().from('contacts').update({ active: false }).or(`last_seen_run.neq.${runId},last_seen_run.is.null`).eq('active', true).select('id');
+      if (fullList && listType === 'active') {
+        const { data } = await sb().from('contacts').update({ active: false, employment: 'left' }).or(`last_seen_run.neq.${runId},last_seen_run.is.null`).eq('active', true).select('id');
         off = data?.length || 0;
       }
       showToast(`Contacts saved: ${res.added} added, ${res.updated} updated${off ? `, ${off} marked inactive` : ''}.`);
@@ -65,6 +66,13 @@ function UploadContacts({ onClose, onSaved }) {
         <label className="font-semibold text-ink-800" htmlFor="ct-file"><FileUp size={16} className="mr-1 inline" />Choose the Contact Details file (.xlsx or .csv)</label>
         <p className="mt-1 text-xs text-slate-500">Columns are found by their headings: <b>Name</b> and <b>Department</b> are needed; E Code, Official Email, Personal Email, Mobile, Designation, Location, Reporting Manager and Status are used when present.</p>
         <input id="ct-file" type="file" accept=".xlsx,.csv" onChange={onFile} className="mt-2 block text-xs" />
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+          <span className="font-semibold text-ink-800">This file is:</span>
+          {[['active', 'Active employees'], ['left', 'Left employees']].map(([v, l]) => (
+            <label key={v} className="flex items-center gap-1.5"><input type="radio" name="ct-list" checked={listType === v} onChange={() => setListType(v)} />{l}</label>
+          ))}
+          <span className="text-slate-500">Both lists are used to find E Codes by email for the Monthly Sheet.</span>
+        </div>
       </div>
       {!src && (
         <textarea className="input mt-3 h-24 font-mono text-xs" placeholder="…or paste the rows here, including the heading row" value={paste} onChange={(e) => setPaste(e.target.value)} />

@@ -16,12 +16,13 @@ export async function POST(req) {
     if (errors.length) throw httpError(400, errors.join(' '));
     const a = admin();
     const runId = String(body.runId || '');
-    const res = await saveContacts(a, contacts, { runId: runId || null });
+    const status = body.status === 'left' ? 'left' : 'active';
+    const res = await saveContacts(a, contacts, { runId: runId || null, status });
     let deactivated = 0;
-    if (body.final && runId) {
-      const { data } = await a.from('contacts').update({ active: false }).neq('last_seen_run', runId).eq('active', true).select('id');
+    if (status === 'active' && body.final && runId) {
+      const { data } = await a.from('contacts').update({ active: false, employment: 'left' }).neq('last_seen_run', runId).eq('active', true).select('id');
       deactivated = data?.length || 0;
-      const { data: nulls } = await a.from('contacts').update({ active: false }).is('last_seen_run', null).eq('active', true).select('id');
+      const { data: nulls } = await a.from('contacts').update({ active: false, employment: 'left' }).is('last_seen_run', null).eq('active', true).select('id');
       deactivated += nulls?.length || 0;
     }
     return Response.json({ ok: true, rows: contacts.length, ...res, deactivated });

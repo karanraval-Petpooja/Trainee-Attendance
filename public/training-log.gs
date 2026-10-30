@@ -17,7 +17,7 @@
  *  4. Choose "createTrigger" → Run (Contact Details refresh every few hours).
  *  After changing this code later: Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.
  */
-const SCRIPT_VERSION = '2026-10-19 final-v9'; // shown in the log, so you can see which code is running
+const SCRIPT_VERSION = '2026-10-29 final-v11'; // shown in the log, so you can see which code is running
 
 const CONFIG = {
   APP_URL: 'https://YOUR-APP.vercel.app',          // your app address (no / at the end)
@@ -34,6 +34,7 @@ const CONFIG = {
     SHEET_ID: '1FDODawNLYPxIp9PdJm8NDHFrEBbOKGZcOwS7WkDZOt4', // Contact Details sheet
     TAB_GID: '',                                    // optional: tab ID from the link (…#gid=…); empty = use TAB_NAME
     TAB_NAME: 'ACTIVE',                             // tab name at the bottom of the Contact Details sheet
+    LEFT_TAB_NAME: '',                              // tab with LEFT employees; empty = any tab called Left / Exit / Resigned / Inactive
     FIRST_DATA_ROW: 0,                              // 0 = find the heading row automatically (Name + Department)
     REFRESH_EVERY_HOURS: 6,                         // automatic refresh; also on demand: app → Contact Details → Refresh
     EMAIL_COLUMN: '',                               // optional (old method): column letter with the official email
@@ -175,15 +176,12 @@ function contactsTab_(c) {
   return sheet;
 }
 
-function syncContacts() {
-  Logger.log('Script version ' + SCRIPT_VERSION);
-  const c = CONFIG.CONTACTS;
-  if (!c || !c.SHEET_ID) throw new Error('Fill CONTACTS.SHEET_ID and CONTACTS.TAB_NAME in CONFIG first.');
-  const sheet = contactsTab_(c);
-  const last = sheet.getLastRow();
-  const width = sheet.getLastColumn();
-  var first = c.FIRST_DATA_ROW || 0;
-  if (!first) { // heading row = first row (within the top 10) that has a Name and a Department-type heading
+// rows of a Contact Details tab: heading row = the first row (top 10) with a Name and a Department-type heading
+function contactRows_(sheet, firstRow) {
+  const last = sheet.getLastRow(); const width = sheet.getLastColumn();
+  if (!last || !width) return null;
+  var first = firstRow || 0;
+  if (!first) {
     const top = sheet.getRange(1, 1, Math.min(10, last), width).getDisplayValues();
     for (var h = 0; h < top.length && !first; h++) {
       const cells = top[h].map(function (x) { return String(x).trim().toLowerCase(); });
@@ -191,28 +189,57 @@ function syncContacts() {
       const hasDept = cells.some(function (x) { return /depart|\bdept\b|^team( name)?$|^function$/.test(x.replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim()); });
       if (hasName && hasDept) first = h + 2;
     }
-    if (!first) throw new Error('Contact Details: no heading row with "Name" and "Department" in the first 10 rows of "' + c.TAB_NAME + '".');
+    if (!first) return null;
   }
   const header = sheet.getRange(first - 1, 1, 1, width).getDisplayValues()[0];
   const values = last >= first ? sheet.getRange(first, 1, last - first + 1, width).getDisplayValues() : [];
-  const rows = values.filter(function (r) { return r.join('').trim(); });
-  const runId = Utilities.getUuid();
-  const total = { ok: true, rows: 0, added: 0, updated: 0, deactivated: 0 };
+  return { header: header, rows: values.filter(function (r) { return r.join('').trim(); }) };
+}
+
+// send one list to the app: status 'active' (ACTIVE tab) or 'left' (LEFT tab)
+function sendContacts_(data, status, runId) {
+  const total = { rows: 0, added: 0, updated: 0, deactivated: 0 };
   const step = 500;
-  for (var i = 0; i < rows.length || i === 0; i += step) {
-    const chunk = rows.slice(i, i + step);
+  for (var i = 0; i < data.rows.length || i === 0; i += step) {
+    const chunk = data.rows.slice(i, i + step);
     const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/contacts-sync', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { 'x-sync-secret': String(CONFIG.SYNC_SECRET).trim() },
-      payload: JSON.stringify({ header: header, rows: chunk, runId: runId, final: i + step >= rows.length }),
+      payload: JSON.stringify({ header: data.header, rows: chunk, runId: runId, status: status, final: i + step >= data.rows.length }),
     });
-    const body = JSON.parse(res.getContentText() || '{}');
-    if (!body.ok) throw new Error('Contacts: ' + (body.error || res.getResponseCode()));
+    const code = res.getResponseCode(); const text = res.getContentText() || '';
+    var body = null;
+    try { body = JSON.parse(text || '{}'); } catch (e) {
+      throw new Error('Contacts: the app at ' + CONFIG.APP_URL + ' answered HTTP ' + code + ' and not JSON (' + text.replace(/\s+/g, ' ').slice(0, 160) + '). ' +
+        (code === 401 || /vercel/i.test(text) ? 'Vercel Deployment Protection may be blocking it (Vercel → Settings → Deployment Protection).' : 'Check APP_URL and that the latest app is deployed.'));
+    }
+    if (!body.ok) throw new Error('Contacts: HTTP ' + code + ' – ' + (body.error || 'error'));
     total.rows += body.rows; total.added += body.added; total.updated += body.updated; total.deactivated += body.deactivated || 0;
-    if (!rows.length) break;
+    if (!data.rows.length) break;
   }
-  Logger.log('Contacts (tab "' + sheet.getName() + '"): ' + total.rows + ' rows, ' + total.added + ' added, ' + total.updated + ' updated, ' + total.deactivated + ' no longer in the sheet.');
   return total;
+}
+
+function syncContacts() {
+  Logger.log('Script version ' + SCRIPT_VERSION);
+  const c = CONFIG.CONTACTS;
+  if (!c || !c.SHEET_ID) throw new Error('Fill CONTACTS.SHEET_ID and CONTACTS.TAB_NAME in CONFIG first.');
+  const sheet = contactsTab_(c);
+  const active = contactRows_(sheet, c.FIRST_DATA_ROW || 0);
+  if (!active) throw new Error('Contact Details: no heading row with "Name" and "Department" in the first 10 rows of "' + sheet.getName() + '".');
+  const runId = Utilities.getUuid();
+  const a = sendContacts_(active, 'active', runId);
+  Logger.log('Contacts – Active (tab "' + sheet.getName() + '"): ' + a.rows + ' rows, ' + a.added + ' added, ' + a.updated + ' updated, ' + a.deactivated + ' no longer active.');
+  // LEFT employees: the tab named in LEFT_TAB_NAME, or any tab called Left / Exit / Resigned / Inactive
+  const book = SpreadsheetApp.openById(c.SHEET_ID);
+  const want = String(c.LEFT_TAB_NAME || '').trim().toLowerCase();
+  const leftTab = book.getSheets().filter(function (t) { const n = t.getName().trim().toLowerCase(); return (want && n === want) || (!want && /\bleft\b|exit|resign|inactive|ex[-\s]?employee/.test(n)); })[0];
+  var l = null;
+  if (leftTab && leftTab.getSheetId() !== sheet.getSheetId()) {
+    const data = contactRows_(leftTab, 0);
+    if (data) { l = sendContacts_(data, 'left', runId); Logger.log('Contacts – Left (tab "' + leftTab.getName() + '"): ' + l.rows + ' rows, ' + l.added + ' added, ' + l.updated + ' updated.'); }
+  } else Logger.log('Contacts – Left: no Left tab found (set CONFIG.CONTACTS.LEFT_TAB_NAME).');
+  return { ok: true, rows: a.rows + (l ? l.rows : 0), added: a.added + (l ? l.added : 0), updated: a.updated + (l ? l.updated : 0), deactivated: a.deactivated, left: l ? l.rows : 0 };
 }
 
 // Contact Details refresh every few hours (Training Log needs no trigger: the app pushes it)

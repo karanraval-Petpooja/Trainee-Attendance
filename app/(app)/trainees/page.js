@@ -10,7 +10,6 @@ import { addDays, fmtMedium } from '@/lib/dates';
 import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, periodsOf, sentToFloor, traineeActiveOn } from '@/lib/status';
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
-import AttendanceImport from '@/components/trainees/AttendanceImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
 import NhtFeedbackShare from '@/components/NhtFeedbackShare';
 import { FEEDBACK_FORMS } from '@/lib/feedbackForms';
@@ -765,7 +764,6 @@ export default function TraineesPage() {
   const [switchItems, setSwitchItems] = useState(null); // { items, title }
   const [newBatch, setNewBatch] = useState(false);
   const [dossier, setDossier] = useState(false);
-  const [attImport, setAttImport] = useState(false);
   const [ragFor, setRagFor] = useState(null);
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
   const [batchFilter, setBatchFilter] = useState('all');
@@ -872,7 +870,6 @@ export default function TraineesPage() {
         actions={(
           <>
             {isManager && <button data-tour="upload-dossier" className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
-            {isManager && <button className="btn-secondary" onClick={() => setAttImport(true)}><FileUp size={16} />Import attendance</button>}
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
             <button className="btn-primary" onClick={() => setForm(blank)}><Plus size={16} />Add Trainee</button>
@@ -1106,7 +1103,6 @@ export default function TraineesPage() {
       {bulk && <BulkAdd trainers={trainers} isManager={isManager} batches={batches} trainees={trainees} trainerNames={trainerNames} defaultBatch={batch?.id} onClose={() => setBulk(false)} onSaved={saved} />}
       {moveItems && <MoveToBatch items={moveItems} batches={batches} trainees={trainees} trainerNames={trainerNames} onClose={() => setMoveItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {switchItems && <SwitchTrainer items={switchItems.items} title={switchItems.title} trainers={trainers} trainerNames={trainerNames} onClose={() => setSwitchItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
-      {attImport && <AttendanceImport trainees={trainees} onClose={() => setAttImport(false)} onDone={(m) => { showToast(m); reload(); }} />}
       {dossier && <DossierImport trainers={trainers} trainees={trainees} onClose={() => setDossier(false)} onDone={(m) => { showToast(m); reload(); }} />}
       {newBatch && <NewBatch trainers={trainers} batches={batches} onClose={() => setNewBatch(false)} onDone={(m, id) => { showToast(m); reload(); if (id) { setBatchFilter(id); setShow('all'); } }} />}
       {floor && floor.items.length > 0 && (
