@@ -11,6 +11,7 @@ import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, pe
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
+import PeriodEditor from '@/components/trainees/PeriodEditor';
 import NhtFeedbackShare from '@/components/NhtFeedbackShare';
 import { FEEDBACK_FORMS } from '@/lib/feedbackForms';
 
@@ -324,6 +325,7 @@ function TraineeForm({ initial, trainers, isManager, onClose, onSaved, batches, 
         <div className="mt-4 rounded-xl border border-slate-200 p-3.5">
           <div className="mb-2 text-xs font-semibold text-slate-500">Training history</div>
           <PeriodList t={initial} />
+          {isManager && <PeriodEditor trainee={initial} onSaved={(msg) => { onSaved(msg); onClose(); }} />}
         </div>
       )}
       <div className="mt-4"><ErrorText>{error}</ErrorText></div>
