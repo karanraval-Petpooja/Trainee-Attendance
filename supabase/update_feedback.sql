@@ -18,6 +18,8 @@ create table if not exists public.feedback_responses (
   trainer_name      text,                                  -- as typed / picked in the form
   batch_code        text,                                  -- as typed / picked in the form
   answers           jsonb not null default '[]'::jsonb,    -- [{"q": "question", "a": "answer"}, …] in form order
+  rating            numeric(4,2),                          -- average of the rating questions, out of 5 stars (null = form has none)
+  ratings           jsonb not null default '{}'::jsonb,    -- {"question": stars out of 5}
   trainee_id        uuid references public.trainees(id) on delete set null,
   trainer_id        uuid references public.profiles(id) on delete set null,
   match_via         text,                                  -- code | email | name | manual
@@ -27,6 +29,8 @@ create table if not exists public.feedback_responses (
   unique (form_id, row_key)
 );
 alter table public.feedback_responses add column if not exists source text not null default '';
+alter table public.feedback_responses add column if not exists rating numeric(4,2);
+alter table public.feedback_responses add column if not exists ratings jsonb not null default '{}'::jsonb;
 create index if not exists feedback_responses_trainee_idx on public.feedback_responses (form_id, trainee_id);
 create index if not exists feedback_responses_trainer_idx on public.feedback_responses (trainer_id);
 create index if not exists feedback_responses_email_idx   on public.feedback_responses (respondent_email);
@@ -48,7 +52,8 @@ language sql immutable as $$
 $$;
 
 -- Link responses that have no trainee yet: E Code, then email (official or personal), then the exact name
--- (only when ONE trainee has that name — never guessed). Returns how many were linked.
+-- (only when ONE trainee has that name — never guessed). Trainees who LEFT or were removed are matched too, so their
+-- feedback is never lost; a trainee who is still in the app is always preferred. Returns how many were linked.
 create or replace function public.match_feedback_responses() returns int
 language plpgsql security definer set search_path = public as $$
 declare
@@ -60,10 +65,10 @@ begin
   from (
     select distinct on (f2.id) f2.id as fid, t.id as tid
     from feedback_responses f2
-    join trainees t on t.deleted_at is null and t.employee_code is not null
+    join trainees t on t.employee_code is not null
                    and lower(trim(t.employee_code)) = lower(trim(f2.respondent_code))
     where f2.trainee_id is null and coalesce(trim(f2.respondent_code), '') <> ''
-    order by f2.id, (t.joining_date <= coalesce(f2.submitted_at::date, current_date)) desc, t.joining_date desc
+    order by f2.id, (t.deleted_at is null) desc, (t.joining_date <= coalesce(f2.submitted_at::date, current_date)) desc, t.joining_date desc
   ) x
   where f.id = x.fid;
   get diagnostics c = row_count; n := n + c;
@@ -73,20 +78,31 @@ begin
   from (
     select distinct on (f2.id) f2.id as fid, t.id as tid
     from feedback_responses f2
-    join trainees t on t.deleted_at is null
-                   and (lower(trim(t.official_email)) = f2.respondent_email or lower(trim(t.personal_email)) = f2.respondent_email)
+    join trainees t on (lower(trim(t.official_email)) = f2.respondent_email or lower(trim(t.personal_email)) = f2.respondent_email)
     where f2.trainee_id is null and coalesce(f2.respondent_email, '') <> ''
-    order by f2.id, (t.joining_date <= coalesce(f2.submitted_at::date, current_date)) desc, t.joining_date desc
+    order by f2.id, (t.deleted_at is null) desc, (t.joining_date <= coalesce(f2.submitted_at::date, current_date)) desc, t.joining_date desc
   ) x
   where f.id = x.fid;
   get diagnostics c = row_count; n := n + c;
 
-  -- 3) Name, only when it is unique among trainees
+  -- 3) Name, only when it is unique: first among trainees still in the app, then among removed ones
   update feedback_responses f set trainee_id = x.tid, match_via = 'name'
   from (
     select f2.id as fid, (array_agg(t.id))[1] as tid
     from feedback_responses f2
     join trainees t on t.deleted_at is null and feedback_name_key(t.name) = feedback_name_key(f2.respondent_name)
+    where f2.trainee_id is null and feedback_name_key(f2.respondent_name) <> ''
+    group by f2.id
+    having count(*) = 1
+  ) x
+  where f.id = x.fid;
+  get diagnostics c = row_count; n := n + c;
+
+  update feedback_responses f set trainee_id = x.tid, match_via = 'name'
+  from (
+    select f2.id as fid, (array_agg(t.id))[1] as tid
+    from feedback_responses f2
+    join trainees t on t.deleted_at is not null and feedback_name_key(t.name) = feedback_name_key(f2.respondent_name)
     where f2.trainee_id is null and feedback_name_key(f2.respondent_name) <> ''
     group by f2.id
     having count(*) = 1

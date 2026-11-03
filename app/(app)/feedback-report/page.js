@@ -1,13 +1,13 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardCopy, FileSpreadsheet, Link2, RefreshCw, Search } from 'lucide-react';
+import { ClipboardCopy, FileSpreadsheet, Link2, RefreshCw, Search, Star } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner, StatCard } from '@/components/ui';
 import { authFetch, sb } from '@/lib/supabase';
 import { fetchAll, useFeedback, useTrainees, useTrainers } from '@/lib/hooks';
 import { fmtDateTime } from '@/lib/dates';
 import { FEEDBACK_FORMS, formById } from '@/lib/feedbackForms';
-import { notJoining, scopeTo, sentToFloor, traineeActiveOn } from '@/lib/status';
+import { EXIT_LABELS, notJoining, scopeTo, sentToFloor, traineeActiveOn } from '@/lib/status';
 import { downloadTableXlsx } from '@/lib/monthlySheet';
 
 // Who is tracked for "pending" on each form. Upskill / OJT-PIP forms are filled by session participants, who are not
@@ -15,6 +15,24 @@ import { downloadTableXlsx } from '@/lib/monthlySheet';
 const isSales = (t) => /sales/i.test(`${t._batch?.purpose || ''} ${t.track || ''}`);
 const TRACK = { nht: (t) => !isSales(t), sales: (t) => isSales(t) };
 const VIA = { code: 'E Code', email: 'email', name: 'name', manual: 'linked by manager' };
+
+// 0-5 stars, partly filled for averages (4.5 = four and a half stars)
+function Stars({ value, size = 14 }) {
+  const v = Number(value) || 0;
+  return (
+    <span className="inline-flex items-center gap-0.5" role="img" aria-label={`${v.toFixed(1)} out of 5 stars`}>
+      {[0, 1, 2, 3, 4].map((i) => (
+        <span key={i} className="relative inline-block" style={{ width: size, height: size }}>
+          <Star size={size} className="text-slate-200" />
+          <span className="absolute inset-0 overflow-hidden" style={{ width: `${Math.max(0, Math.min(1, v - i)) * 100}%` }}><Star size={size} className="fill-amber-400 text-amber-400" /></span>
+        </span>
+      ))}
+    </span>
+  );
+}
+const RatingCell = ({ r }) => (r?.rating != null
+  ? <span className="inline-flex items-center gap-1.5"><Stars value={r.rating} /><span className="text-xs font-semibold text-slate-700">{Number(r.rating).toFixed(1)}</span></span>
+  : <span className="text-slate-300">—</span>);
 
 function AnswersModal({ id, title, onClose }) {
   const [row, setRow] = useState(null);
@@ -45,7 +63,7 @@ function LinkModal({ response, trainees, onClose, onSaved }) {
   const [pick, setPick] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const list = useMemo(() => trainees.filter((t) => [t.name, t.employee_code, t.official_email].some((v) => v?.toLowerCase().includes(q.trim().toLowerCase()))).slice(0, 60), [trainees, q]);
+  const list = useMemo(() => trainees.filter((t) => !t.deleted_at && [t.name, t.employee_code, t.official_email].some((v) => v?.toLowerCase().includes(q.trim().toLowerCase()))).slice(0, 60), [trainees, q]);
   const save = async () => {
     setSaving(true); setError('');
     const { error: e } = await sb().rpc('link_feedback_response', { p_response: response.id, p_trainee: pick || null });
@@ -76,7 +94,7 @@ export default function FeedbackReportPage() {
   const [form, setForm] = useState('nht');
   const meta = formById(form);
   const tracked = Boolean(TRACK[form]);
-  const { trainees, loading, reload: reloadTrainees } = useTrainees({ includeInactive: true, trainerId: isManager ? null : profile.id });
+  const { trainees, loading, reload: reloadTrainees } = useTrainees({ includeInactive: true, includeDeleted: true, trainerId: isManager ? null : profile.id });
   const { trainers } = useTrainers();
   const { rows: responses, loading: rLoading, reload: reloadResponses } = useFeedback(form);
   const names = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
@@ -110,7 +128,7 @@ export default function FeedbackReportPage() {
   const pool = useMemo(() => scopeTo(trainees, trainerId), [trainees, trainerId]);
   // Everyone who has given feedback is listed (even if removed from attendance later). Someone with NO feedback is "pending"
   // only if they can still be asked: active, joined, and not resigned / not certified / dropped out.
-  const expected = (t) => t.status === 'active' && !notJoining(t) && (!t.exit_reason || t.exit_reason === 'handover');
+  const expected = (t) => t.status === 'active' && !t.deleted_at && !notJoining(t) && (!t.exit_reason || t.exit_reason === 'handover');
   const inForm = useMemo(() => (tracked ? pool.filter((t) => TRACK[form](t) && (byTrainee[t.id] || expected(t))) : []), [pool, tracked, form, byTrainee]); // eslint-disable-line react-hooks/exhaustive-deps
   const inFormIds = useMemo(() => new Set(inForm.map((t) => t.id)), [inForm]);
   const tById = useMemo(() => Object.fromEntries(trainees.map((t) => [t.id, t])), [trainees]);
@@ -125,6 +143,7 @@ export default function FeedbackReportPage() {
   // Shown at the bottom: not linked to anyone, or linked to someone who is not in the list above
   const rest = tracked ? responses.filter((r) => !r.trainee_id || (trainerId === 'all' && !inFormIds.has(r.trainee_id))) : responses;
   const finished = (t) => !traineeActiveOn(t, now.date) || sentToFloor(t);
+  const stageLabel = (t) => (t.deleted_at ? 'Removed' : t.exit_reason && t.exit_reason !== 'handover' ? EXIT_LABELS[t.exit_reason] || 'Left' : finished(t) ? 'Finished' : 'In training');
   const afterTraining = useMemo(() => inForm.filter((t) => training === 'all' || (training === 'finished' ? finished(t) : !finished(t))), [inForm, training, now.date]); // eslint-disable-line react-hooks/exhaustive-deps
   const batches = useMemo(() => {
     const m = new Map();
@@ -144,6 +163,29 @@ export default function FeedbackReportPage() {
     .filter((t) => status === 'all' || (status === 'submitted' ? byTrainee[t.id] : !byTrainee[t.id]))
     .filter((t) => [t.name, t.employee_code, t.official_email].some((v) => v?.toLowerCase().includes(q.trim().toLowerCase())))
     .sort((a, b) => Number(Boolean(byTrainee[a.id])) - Number(Boolean(byTrainee[b.id])) || (a._batch?.code || '').localeCompare(b._batch?.code || '') || a.name.localeCompare(b.name));
+  // Stars: the average of the rating questions in the responses being looked at (follows the batch / trainer / stage filters)
+  const wholeView = trainerId === 'all' && batchId === 'all' && training === 'all';
+  const scopedIds = new Set(scoped.map((t) => t.id));
+  const basis = !tracked || wholeView ? responses : responses.filter((r) => r.trainee_id && scopedIds.has(r.trainee_id));
+  const rated = basis.filter((r) => r.rating != null);
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const avg = rated.length ? mean(rated.map((r) => Number(r.rating))) : null;
+  const dist = [5, 4, 3, 2, 1].map((n) => rated.filter((r) => Math.min(5, Math.max(1, Math.round(Number(r.rating)))) === n).length);
+  const byQuestion = (() => {
+    const m = {};
+    rated.forEach((r) => Object.entries(r.ratings || {}).forEach(([q, v]) => { (m[q] ||= []).push(Number(v)); }));
+    return Object.entries(m).map(([q, a]) => ({ q, avg: mean(a), n: a.length })).sort((a, b) => b.avg - a.avg);
+  })();
+  const byTrainer = (() => {
+    if (!isManager) return [];
+    const m = {};
+    rated.forEach((r) => {
+      const t = r.trainee_id ? tById[r.trainee_id] : null;
+      const name = (t && (names[t.trainer_id] || t.trainer_label)) || (r.trainer_id && names[r.trainer_id]) || r.trainer_name || '';
+      if (name) (m[name] ||= []).push(Number(r.rating));
+    });
+    return Object.entries(m).map(([name, a]) => ({ name, avg: mean(a), n: a.length })).sort((a, b) => b.avg - a.avg);
+  })();
   const trainerOf = (t) => names[t.trainer_id] || t.trainer_label || '—';
 
   const refresh = async () => {
@@ -164,9 +206,9 @@ export default function FeedbackReportPage() {
   };
 
   const downloadTracker = () => downloadTableXlsx({
-    headers: ['E Code', 'E Name', 'Batch', 'Trainer', 'Training', meta.label + ' feedback', 'Submitted on'],
-    rows: rows.map((t) => [t.employee_code || '', t.name, t._batch?.code || '', trainerOf(t), finished(t) ? 'Finished' : 'In training',
-      byTrainee[t.id] ? 'Submitted' : 'Pending', byTrainee[t.id]?.submitted_at ? fmtDateTime(byTrainee[t.id].submitted_at, tz) : '']),
+    headers: ['E Code', 'E Name', 'Batch', 'Trainer', 'Status', meta.label + ' feedback', 'Rating (out of 5)', 'Submitted on'],
+    rows: rows.map((t) => [t.employee_code || '', t.name, t._batch?.code || '', trainerOf(t), stageLabel(t),
+      byTrainee[t.id] ? 'Submitted' : 'Pending', byTrainee[t.id]?.rating ?? '', byTrainee[t.id]?.submitted_at ? fmtDateTime(byTrainee[t.id].submitted_at, tz) : '']),
     filename: `Feedback_${meta.label.replace(/\W+/g, '_')}_${now.date}.xlsx`, sheetName: 'Feedback status',
   });
 
@@ -178,11 +220,11 @@ export default function FeedbackReportPage() {
       const qs = [];
       all.forEach((r) => (r.answers || []).forEach((x) => { if (!qs.includes(x.q)) qs.push(x.q); }));
       await downloadTableXlsx({
-        headers: ['Submitted on', 'Name (form)', 'Email', 'Trainer (form)', 'Batch (form)', 'Matched trainee', 'E Code', 'Matched batch', ...qs],
+        headers: ['Submitted on', 'Rating (out of 5)', 'Name (form)', 'Email', 'Trainer (form)', 'Batch (form)', 'Matched trainee', 'E Code', 'Matched batch', ...qs],
         rows: all.map((r) => {
           const t = tmap[r.trainee_id];
           const a = Object.fromEntries((r.answers || []).map((x) => [x.q, x.a]));
-          return [r.submitted_at ? fmtDateTime(r.submitted_at, tz) : '', r.respondent_name || '', r.respondent_email || '', r.trainer_name || '', r.batch_code || '',
+          return [r.submitted_at ? fmtDateTime(r.submitted_at, tz) : '', r.rating ?? '', r.respondent_name || '', r.respondent_email || '', r.trainer_name || '', r.batch_code || '',
             t?.name || '', t?.employee_code || '', t?._batch?.code || '', ...qs.map((x) => a[x] ?? '')];
         }),
         filename: `Feedback_answers_${meta.label.replace(/\W+/g, '_')}_${now.date}.xlsx`, sheetName: 'Responses',
@@ -214,6 +256,58 @@ export default function FeedbackReportPage() {
       </div>
 
       {rLoading ? <PageLoader /> : (<>
+        {rated.length > 0 ? (
+          <div className="panel p-5">
+            <div className="grid gap-5 lg:grid-cols-3">
+              <div className="flex items-center gap-4">
+                <div className="font-display text-5xl font-bold tracking-tight text-ink-800">{avg.toFixed(1)}</div>
+                <div>
+                  <Stars value={avg} size={22} />
+                  <div className="mt-1 text-xs text-slate-500">{rated.length} rating{rated.length === 1 ? '' : 's'} · out of 5{!wholeView ? ' · current filters' : ''}</div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {[5, 4, 3, 2, 1].map((n, i) => (
+                  <div key={n} className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-6 shrink-0">{n} ★</span>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-400" style={{ width: `${(dist[i] * 100) / rated.length}%` }} /></div>
+                    <span className="w-6 shrink-0 text-right">{dist[i]}</span>
+                  </div>
+                ))}
+              </div>
+              <div>
+                {byTrainer.length > 1 ? (
+                  <>
+                    <div className="mb-2 text-xs font-semibold text-slate-500">Top rated trainers</div>
+                    <div className="space-y-1.5">
+                      {byTrainer.slice(0, 5).map((t, i) => (
+                        <div key={t.name} className="flex items-center justify-between gap-3 text-sm">
+                          <span className="truncate text-slate-700"><span className="mr-1.5 text-xs text-slate-400">{i + 1}.</span>{t.name}</span>
+                          <span className="flex shrink-0 items-center gap-1.5"><Stars value={t.avg} size={12} /><b className="w-7 text-right text-slate-800">{t.avg.toFixed(1)}</b><span className="w-9 text-xs text-slate-400">({t.n})</span></span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : <div className="text-xs text-slate-500">Stars are the average of the rating questions in the form (1–5 scale; a 1–10 question is converted to 5 stars).</div>}
+              </div>
+            </div>
+            {byQuestion.length > 1 && (
+              <div className="mt-5 grid gap-x-8 gap-y-2 border-t border-slate-100 pt-4 sm:grid-cols-2">
+                {byQuestion.map((x) => (
+                  <div key={x.q} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="truncate text-slate-600" title={x.q}>{x.q}</span>
+                    <span className="flex shrink-0 items-center gap-1.5"><Stars value={x.avg} size={12} /><b className="w-7 text-right text-slate-800">{x.avg.toFixed(1)}</b></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (responses.length > 0 && isManager && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+            No star ratings yet. They appear when the form has rating questions (a 1–5 scale) and the sheet has been refreshed (Refresh from sheet).
+          </div>
+        ))}
+
         {tracked ? (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -275,9 +369,9 @@ export default function FeedbackReportPage() {
                 </div>
               )}
               <div>
-                <label className="label" htmlFor="fb-training">Training</label>
+                <label className="label" htmlFor="fb-training">Stage</label>
                 <select id="fb-training" className="input" value={training} onChange={(e) => { setTraining(e.target.value); setBatchId('all'); }}>
-                  <option value="all">All</option><option value="finished">Finished / on the floor</option><option value="training">Still in training</option>
+                  <option value="all">All</option><option value="finished">Finished / left</option><option value="training">Still in training</option>
                 </select>
               </div>
             </div>
@@ -290,7 +384,7 @@ export default function FeedbackReportPage() {
               {rows.length === 0 ? <Empty title="No trainees match">{inForm.length ? 'Change the filters above.' : 'No trainees for this form yet.'}</Empty> : (
                 <div className="table-wrap max-h-[70vh] overflow-y-auto">
                   <table className="tbl">
-                    <thead className="sticky top-0 z-10"><tr><th>E Code</th><th>E Name</th><th>Batch</th>{isManager && <th>Trainer</th>}<th>Training</th><th>Feedback</th><th>Submitted</th><th /></tr></thead>
+                    <thead className="sticky top-0 z-10"><tr><th>E Code</th><th>E Name</th><th>Batch</th>{isManager && <th>Trainer</th>}<th>Status</th><th>Feedback</th><th>Rating</th><th>Submitted</th><th /></tr></thead>
                     <tbody>
                       {rows.map((t) => {
                         const r = byTrainee[t.id];
@@ -300,10 +394,11 @@ export default function FeedbackReportPage() {
                             <td className="font-semibold text-slate-800">{t.name}</td>
                             <td className="text-slate-600">{t._batch?.code || '—'}</td>
                             {isManager && <td className="text-slate-600">{trainerOf(t)}</td>}
-                            <td className="text-slate-600">{finished(t) ? 'Finished' : 'In training'}</td>
+                            <td className="text-slate-600">{stageLabel(t)}</td>
                             <td>{r
                               ? <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">✓ Submitted</span>
                               : <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">⏳ Pending</span>}</td>
+                            <td><RatingCell r={r} /></td>
                             <td className="text-xs text-slate-500">{r ? <>{r.submitted_at ? fmtDateTime(r.submitted_at, tz) : '—'}{r.match_via && r.match_via !== 'email' && r.match_via !== 'code' && <div className="text-slate-400">matched by {VIA[r.match_via]}</div>}</> : '—'}</td>
                             <td>{r && <button className="btn-ghost btn-sm" onClick={() => setOpen({ id: r.id, title: `${t.name} · ${meta.label} feedback` })}>View</button>}</td>
                           </tr>
@@ -333,7 +428,7 @@ export default function FeedbackReportPage() {
           ) : (
             <div className="table-wrap max-h-[50vh] overflow-y-auto">
               <table className="tbl">
-                <thead className="sticky top-0 z-10"><tr><th>Name in form</th><th>Email</th><th>Trainer in form</th><th>Batch in form</th>{tracked && <th>Status</th>}<th>Submitted</th><th /></tr></thead>
+                <thead className="sticky top-0 z-10"><tr><th>Name in form</th><th>Email</th><th>Trainer in form</th><th>Batch in form</th>{tracked && <th>Status</th>}<th>Rating</th><th>Submitted</th><th /></tr></thead>
                 <tbody>
                   {rest.map((r) => (
                     <tr key={r.id}>
@@ -342,6 +437,7 @@ export default function FeedbackReportPage() {
                       <td className="text-slate-600">{r.trainer_name || (r.trainer_id ? names[r.trainer_id] : '') || '—'}</td>
                       <td className="text-slate-600">{r.batch_code || '—'}</td>
                       {tracked && <td className="text-xs text-slate-600">{r.trainee_id ? `Linked to ${tById[r.trainee_id]?.name || 'a trainee'}, not in the list above` : 'Not linked'}</td>}
+                      <td><RatingCell r={r} /></td>
                       <td className="text-xs text-slate-500">{r.submitted_at ? fmtDateTime(r.submitted_at, tz) : '—'}</td>
                       <td className="space-x-1">
                         <button className="btn-ghost btn-sm" onClick={() => setOpen({ id: r.id, title: `${r.respondent_name || 'Response'} · ${meta.label} feedback` })}>View</button>
