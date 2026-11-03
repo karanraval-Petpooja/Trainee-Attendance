@@ -88,7 +88,7 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
     return { active: act, outside: outList.length, outList };
   }, [trainees, date, records, trainerNames]);
 
-  const isLocked = (t) => profile.role === 'trainer' && records[t.id] && date < lockBefore;
+  const isLocked = (t) => profile.role === 'trainer' && records[t.id] && records[t.id].source !== 'auto_day1' && date < lockBefore; // an automatic Day 1 can always be corrected
   const valueOf = (t) => draft[t.id] ?? records[t.id]?.status ?? null;
   const changes = active.filter((t) => draft[t.id] && draft[t.id] !== records[t.id]?.status);
   const markedCount = active.filter((t) => valueOf(t)).length;
@@ -179,7 +179,7 @@ export function RegisterList({ date, trainees, trainerNames, onSaved, maxHeight 
                 </div>
                 <div className="text-xs text-slate-400">
                   {[t.employee_code, t._batch?.code, trainerNames?.[trainerOn(t, date)]].filter(Boolean).join(' · ')}
-                  {rec && <> · saved {fmtTime(rec.marked_at, tz)}{rec.is_late ? ' (late)' : ''}</>}
+                  {rec && (rec.source === 'auto_day1' ? <> · Day 1 · marked present automatically</> : <> · saved {fmtTime(rec.marked_at, tz)}{rec.is_late ? ' (late)' : ''}</>)}
                 </div>
               </div>
               <div className="flex items-center gap-1.5" role="radiogroup" aria-label={`Attendance for ${t.name}`}>

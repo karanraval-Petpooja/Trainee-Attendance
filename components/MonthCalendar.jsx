@@ -184,7 +184,7 @@ export default function MonthCalendar({ trainees, single = false, editable = fal
                 const m = STATUS[info.status];
                 const d = fromKey(k);
                 const detail = single
-                  ? (info.record ? `Marked ${fmtTime(info.record.marked_at, tz)}${info.record.is_late ? ' (late)' : ''}` : info.note || '')
+                  ? (info.record ? (info.record.source === 'auto_day1' ? 'Day 1 · marked present automatically' : `Marked ${fmtTime(info.record.marked_at, tz)}${info.record.is_late ? ' (late)' : ''}`) : info.note || '')
                   : (info.status === 'week_off' ? info.note : info.total ? `${info.total - (info.unmarked || 0)}/${info.total} marked${countsText(info.counts) ? ` · ${countsText(info.counts)}` : ''}` : '');
                 return (
                   <li key={k} className={`flex items-center gap-3 px-4 py-3 sm:px-5 ${k === now.date ? 'bg-ink-50/60' : ''}`}>

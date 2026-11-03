@@ -5,6 +5,9 @@
  *
  *  • Training Log: Upskill / Refresher sessions pushed from the app (Push to Training Log)
  *    are written into your Training Log sheet, one row per participant; Sr. No continues per trainer.
+ *  • Feedback Report: the feedback form responses sheet (CONFIG.FEEDBACK) is sent to the app every few hours
+ *    and with the "Refresh from sheet" button on Reports → Feedback Report. A trainer sees only the feedback
+ *    of their own trainees, and the app shows who has NOT filled the form yet.
  *  • Contact Details: the employee list (Name, Department, Location, Designation …) is sent to the app
  *    every few hours and with the app's "Refresh contacts" button. It fills Location / Location Type /
  *    Designation / Department in the Training Log rows.
@@ -14,10 +17,11 @@
  *  2. Choose "syncContacts" → Run → Allow (Google asks once for access to the sheets).
  *  3. Deploy → New deployment → ⚙️ Web app → Execute as: Me, Who has access: Anyone → Deploy.
  *     Copy the Web app URL into the app: Settings → Google script → Save.
- *  4. Choose "createTrigger" → Run (Contact Details refresh every few hours).
+ *  4. Choose "createTrigger" → Run (Contact Details + Feedback refresh every few hours).
+ *     First time with Feedback: also choose "syncFeedback" → Run once (allow access to the feedback sheet).
  *  After changing this code later: Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.
  */
-const SCRIPT_VERSION = '2026-10-29 final-v11'; // shown in the log, so you can see which code is running
+const SCRIPT_VERSION = '2026-11-02 feedback-v12'; // shown in the log, so you can see which code is running
 
 const CONFIG = {
   APP_URL: 'https://YOUR-APP.vercel.app',          // your app address (no / at the end)
@@ -27,6 +31,18 @@ const CONFIG = {
   TRAINING_LOG: {
     SHEET_ID: '14w9Ahgbxw732KaR6SuGtSzcZHP8CAHS6j4lQs1kbhKI',
     TAB_GID: 1134105869,                           // the tab from the link (…#gid=1134105869)
+  },
+
+  // Feedback form responses (Google Form → "Responses" sheet) → app. YOUR account needs view access to this sheet.
+  // One entry per form tab. FORM_ID is one of: nht | sales | upskill | ojt-pip  (the four forms in the app).
+  FEEDBACK: {
+    SHEET_ID: '1sFGFiIKgpbrCMHqRWnkZqUe_IesOgcJM92bOGxHf1eg',
+    TABS: [
+      { FORM_ID: 'nht', TAB_GID: 397834801 },        // the tab from the link (…#gid=397834801). Change FORM_ID if this tab is another form.
+      // { FORM_ID: 'sales', TAB_GID: 0 },            // add the other forms the same way (their own tab, or SHEET_ID: '…' for another file)
+      // { FORM_ID: 'nht', TAB_NAME: 'Old NHT responses' },   // OLDER feedback: another tab / older form of the same type, same FORM_ID
+    ],
+    REFRESH_EVERY_HOURS: 2,                         // automatic refresh (1, 2, 4, 6, 8 or 12); also on demand in the app
   },
 
   // Contact Details sheet → app (fills Location / Designation / Department). YOUR account needs view access.
@@ -42,17 +58,18 @@ const CONFIG = {
   },
 };
 
-// The app calls this web app address with the secret: action=trainingLog (push) or action=contacts (refresh)
+// The app calls this web app address with the secret: action=trainingLog (push), action=contacts or action=feedback (refresh)
 function doGet(e) {
   var out;
   if (!e || !e.parameter || String(e.parameter.key || '').trim() !== String(CONFIG.SYNC_SECRET).trim()) out = { ok: false, error: 'Wrong key' };
   else {
     try {
       const action = e.parameter.action;
-      if (action === 'version') { out = { ok: true, version: SCRIPT_VERSION, trainingLog: true }; return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON); }
+      if (action === 'version') { out = { ok: true, version: SCRIPT_VERSION, trainingLog: true, feedback: true }; return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON); }
       if (action === 'trainingLog') out = pushTrainingLog_(JSON.parse((e.postData && e.postData.contents) || '{}'));
       else if (action === 'contacts') out = syncContacts();
-      else out = { ok: false, error: 'Unknown action. This script serves the Training Log (action=trainingLog) and Contact Details (action=contacts) only.' };
+      else if (action === 'feedback') out = syncFeedback();
+      else out = { ok: false, error: 'Unknown action. This script serves the Training Log (action=trainingLog), Contact Details (action=contacts) and Feedback (action=feedback) only.' };
     } catch (err) { out = { ok: false, error: String(err && err.message || err) }; }
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
@@ -242,11 +259,67 @@ function syncContacts() {
   return { ok: true, rows: a.rows + (l ? l.rows : 0), added: a.added + (l ? l.added : 0), updated: a.updated + (l ? l.updated : 0), deactivated: a.deactivated, left: l ? l.rows : 0 };
 }
 
-// Contact Details refresh every few hours (Training Log needs no trigger: the app pushes it)
+// ---------------------------------------------------------------------------
+// Feedback form responses → app (Reports → Feedback Report).
+// Row 1 of each form tab holds the questions (Google Forms does this itself). The app finds Name / Email /
+// E Code / Trainer / Batch by their headings. Dates are sent as real timestamps, not as the sheet shows them.
+// ---------------------------------------------------------------------------
+function feedbackRows_(sheet) {
+  const last = sheet.getLastRow(); const width = sheet.getLastColumn();
+  if (last < 1 || !width) return null;
+  const range = sheet.getRange(1, 1, last, width);
+  const shown = range.getDisplayValues(); const raw = range.getValues();
+  const tz = sheet.getParent().getSpreadsheetTimeZone();
+  for (var r = 1; r < raw.length; r++) {
+    for (var c = 0; c < width; c++) {
+      const v = raw[r][c];
+      if (v instanceof Date && v.getFullYear() >= 2000) shown[r][c] = Utilities.formatDate(v, tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
+    }
+  }
+  return { header: shown[0], rows: shown.slice(1).filter(function (x) { return x.join('').trim(); }) };
+}
+
+function syncFeedback() {
+  Logger.log('Script version ' + SCRIPT_VERSION);
+  const c = CONFIG.FEEDBACK;
+  if (!c || !c.TABS || !c.TABS.length) throw new Error('Fill CONFIG.FEEDBACK (SHEET_ID and TABS) first.');
+  const out = { ok: true, rows: 0, removed: 0, matched: 0, forms: {} };
+  c.TABS.forEach(function (tab) {
+    const book = SpreadsheetApp.openById(tab.SHEET_ID || c.SHEET_ID);
+    const sheet = book.getSheets().filter(function (t) { return String(t.getSheetId()) === String(tab.TAB_GID); })[0]
+      || (tab.TAB_NAME ? book.getSheetByName(tab.TAB_NAME) : null);
+    if (!sheet) throw new Error('Feedback: tab not found (' + tab.FORM_ID + ', gid ' + tab.TAB_GID + '). Tabs: ' + book.getSheets().map(function (t) { return t.getName() + ' (gid ' + t.getSheetId() + ')'; }).join(', '));
+    const data = feedbackRows_(sheet);
+    if (!data || !data.rows.length) { Logger.log('Feedback ' + tab.FORM_ID + ' (tab "' + sheet.getName() + '"): no responses yet.'); out.forms[tab.FORM_ID] = 0; return; }
+    const runId = Utilities.getUuid();
+    const step = 200;
+    for (var i = 0; i < data.rows.length; i += step) {
+      const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/feedback-sync', {
+        method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+        headers: { 'x-sync-secret': String(CONFIG.SYNC_SECRET).trim() },
+        payload: JSON.stringify({ formId: tab.FORM_ID, source: (tab.SHEET_ID || c.SHEET_ID) + ':' + (tab.TAB_GID !== undefined && tab.TAB_GID !== '' ? tab.TAB_GID : tab.TAB_NAME), header: data.header, rows: data.rows.slice(i, i + step), runId: runId, final: i + step >= data.rows.length, totalRows: data.rows.length }),
+      });
+      const code = res.getResponseCode(); const text = res.getContentText() || '';
+      var body = null;
+      try { body = JSON.parse(text || '{}'); } catch (e) {
+        throw new Error('Feedback: the app at ' + CONFIG.APP_URL + ' answered HTTP ' + code + ' and not JSON (' + text.replace(/\s+/g, ' ').slice(0, 160) + '). ' +
+          (code === 401 || /vercel/i.test(text) ? 'Vercel Deployment Protection may be blocking it.' : 'Check APP_URL and that the latest app is deployed.'));
+      }
+      if (!body.ok) throw new Error('Feedback ' + tab.FORM_ID + ': HTTP ' + code + ' – ' + (body.error || 'error'));
+      out.rows += body.rows; out.removed += body.removed || 0; out.matched += body.matched || 0;
+    }
+    out.forms[tab.FORM_ID] = (out.forms[tab.FORM_ID] || 0) + data.rows.length;
+    Logger.log('Feedback ' + tab.FORM_ID + ' (tab "' + sheet.getName() + '"): ' + data.rows.length + ' responses sent.');
+  });
+  return out;
+}
+
+// Contact Details + Feedback refresh every few hours (Training Log needs no trigger: the app pushes it)
 function createTrigger() {
   removeTrigger();
   if (CONFIG.CONTACTS && CONFIG.CONTACTS.SHEET_ID) ScriptApp.newTrigger('syncContacts').timeBased().everyHours(CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6).create();
-  Logger.log('Contact Details refresh: every ' + (CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6) + ' hour(s).');
+  if (CONFIG.FEEDBACK && CONFIG.FEEDBACK.SHEET_ID) ScriptApp.newTrigger('syncFeedback').timeBased().everyHours(CONFIG.FEEDBACK.REFRESH_EVERY_HOURS || 2).create();
+  Logger.log('Contact Details refresh: every ' + (CONFIG.CONTACTS.REFRESH_EVERY_HOURS || 6) + ' hour(s). Feedback refresh: every ' + ((CONFIG.FEEDBACK && CONFIG.FEEDBACK.REFRESH_EVERY_HOURS) || 2) + ' hour(s).');
 }
 
 // Removes every time trigger of this project (also any old Dossier sync trigger)

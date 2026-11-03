@@ -1,14 +1,52 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Download, FileSpreadsheet } from 'lucide-react';
+import { Download, FileSpreadsheet, ScrollText } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
-import { Empty, PageHeader, PageLoader, StatusChip } from '@/components/ui';
-import { useAttendance, useTrainees, useTrainers } from '@/lib/hooks';
-import { diffDays, endOfMonth, fmtDay, fmtMedium, fmtTime, MONTHS, minKey, pad, rangeKeys, startOfMonth } from '@/lib/dates';
+import { Empty, Modal, PageHeader, PageLoader, Spinner, StatusChip } from '@/components/ui';
+import { useAttendance, useProfileNames, useTrainees, useTrainers } from '@/lib/hooks';
+import { sb } from '@/lib/supabase';
+import { diffDays, endOfMonth, fmtDateTime, fmtDay, fmtMedium, fmtTime, MONTHS, minKey, pad, rangeKeys, startOfMonth } from '@/lib/dates';
 import { computeStatus, scopeTo, STATUS, traineeActiveOn, trainerOn } from '@/lib/status';
 import { downloadTableXlsx } from '@/lib/monthlySheet';
 
 const STATUSES = ['present', 'absent', 'half_day', 'holiday', 'week_off', 'not_filled', 'pending'];
+const STATUS_WORD = { present: 'Present', absent: 'Absent', half_day: 'Half Day', holiday: 'Holiday' };
+
+// Who set this entry: a trainer / manager, the automatic Day 1 rule, or a Dossier import (by the manager who uploaded it)
+function markerText(rec, people) {
+  if (!rec) return '';
+  if (rec.source === 'auto_day1') return 'Auto · Day 1';
+  const p = people[rec.marked_by];
+  const who = p ? `${p.name}${p.role === 'manager' ? ' (manager)' : ''}` : rec.marked_by ? 'Removed user' : 'System';
+  return rec.source === 'dossier' ? `${who} · Dossier import` : who;
+}
+
+function LogModal({ row, people, tz, onClose }) {
+  const [log, setLog] = useState(null);
+  useEffect(() => {
+    sb().from('attendance_log').select('*').eq('trainee_id', row.t.id).eq('attendance_date', row.k).order('id')
+      .then(({ data }) => setLog(data || []));
+  }, [row.t.id, row.k]);
+  return (
+    <Modal title={`${row.t.name} · ${fmtMedium(row.k)}`} onClose={onClose} footer={<button className="btn-secondary" onClick={onClose}>Close</button>}>
+      {log === null ? <div className="py-6 text-center"><Spinner /></div> : log.length === 0 ? (
+        <p className="text-sm text-slate-500">No changes were recorded for this day.</p>
+      ) : (
+        <ol className="space-y-3">
+          {log.map((l) => (
+            <li key={l.id} className="rounded-xl border border-slate-100 p-3 text-sm">
+              <div className="font-semibold text-slate-800">{l.old_status ? `${STATUS_WORD[l.old_status] || l.old_status} → ${STATUS_WORD[l.new_status] || l.new_status}` : `Marked ${STATUS_WORD[l.new_status] || l.new_status}`}</div>
+              <div className="mt-0.5 text-xs text-slate-500">
+                {markerText({ source: l.source, marked_by: l.changed_by }, people)} · {fmtDateTime(l.changed_at, tz)}{l.is_late && l.old_status === null ? ' · late' : ''}
+              </div>
+              {l.note && <div className="mt-1 text-xs text-slate-400">{l.note}</div>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </Modal>
+  );
+}
 
 export default function HistoryPage() {
   const { profile, settings, now, tz } = useApp();
@@ -17,6 +55,8 @@ export default function HistoryPage() {
   const { trainees, loading: tLoading } = useTrainees(canAll ? { includeInactive: true, includeDeleted: true } : { includeInactive: true, includeDeleted: true, trainerId: profile.id });
   const { trainers } = useTrainers();
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
+  const people = useProfileNames();
+  const [logRow, setLogRow] = useState(null);
   const [trainerId, setTrainerId] = useState('all');
   const [traineeId, setTraineeId] = useState('all');
   const [start, setStart] = useState(startOfMonth(now.date));
@@ -53,10 +93,10 @@ export default function HistoryPage() {
   }, [tooLong, start, effectiveEnd, list, settings, byTrainee, now, status]);
 
   const table = () => {
-    const head = ['Date', 'Day', 'E Code', 'Trainee', 'Batch', ...(canAll ? ['Trainer'] : []), 'Status', 'Marked at', 'Late'];
+    const head = ['Date', 'Day', 'E Code', 'Trainee', 'Batch', ...(canAll ? ['Trainer'] : []), 'Status', 'Marked by', 'Marked at', 'Late'];
     const lines = rows.map(({ k, t, info }) => [
       fmtMedium(k), fmtDay(k), t.employee_code || '', t.name, t._batch?.code || '', ...(canAll ? [trainerNames[trainerOn(t, k)] || ''] : []),
-      STATUS[info.status].short, info.record ? fmtTime(info.record.marked_at, tz) : '', info.record?.is_late ? 'Yes' : '',
+      STATUS[info.status].short, markerText(info.record, people), info.record ? fmtTime(info.record.marked_at, tz) : '', info.record?.is_late ? 'Yes' : '',
     ]);
     return { head, lines };
   };
@@ -124,7 +164,7 @@ export default function HistoryPage() {
             : rows.length === 0 ? <Empty title="No records for these filters">Try a different date range or status.</Empty> : (
               <div className="table-wrap max-h-[70vh] overflow-y-auto">
                 <table className="tbl">
-                  <thead className="sticky top-0 z-10"><tr><th>Date</th><th>Day</th><th>Trainee</th>{canAll && <th>Trainer</th>}<th>Status</th><th>Marked at</th></tr></thead>
+                  <thead className="sticky top-0 z-10"><tr><th>Date</th><th>Day</th><th>Trainee</th>{canAll && <th>Trainer</th>}<th>Status</th><th>Marked by</th><th>Marked at</th><th /></tr></thead>
                   <tbody>
                     {rows.map(({ k, t, info }) => (
                       <tr key={`${k}-${t.id}`}>
@@ -133,7 +173,9 @@ export default function HistoryPage() {
                         <td>{t.name}<span className="ml-1 text-xs text-slate-400">{[t.employee_code, t._batch?.code].filter(Boolean).join(' · ')}</span></td>
                         {canAll && <td className="text-slate-500">{trainerNames[trainerOn(t, k)] || '—'}</td>}
                         <td><StatusChip status={info.status} late={info.record?.is_late} /></td>
+                        <td className={info.record?.source === 'auto_day1' ? 'italic text-slate-400' : 'font-medium text-slate-700'}>{info.record ? markerText(info.record, people) : '—'}</td>
                         <td className="text-slate-500">{info.record ? fmtTime(info.record.marked_at, tz) : '—'}</td>
+                        <td>{info.record && <button className="btn-ghost btn-sm" onClick={() => setLogRow({ k, t })} title="Who changed this, and when"><ScrollText size={14} />Log</button>}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -141,6 +183,7 @@ export default function HistoryPage() {
               </div>
             )}
       </div>
+      {logRow && <LogModal row={logRow} people={people} tz={tz} onClose={() => setLogRow(null)} />}
     </div>
   );
 }

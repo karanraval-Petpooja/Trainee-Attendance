@@ -44,7 +44,8 @@ export default function DateCard({ dateKey, info, isToday, tz, onOpen }) {
       <div className="text-lg leading-none" aria-hidden="true">{m.icon}</div>
       <div className={`mt-1.5 text-[13px] font-extrabold leading-tight tracking-wide ${m.text}`}>{m.label}</div>
       {info.note && <div className="mt-0.5 truncate text-[11px] text-slate-500">{info.note}</div>}
-      {rec && <div className="mt-0.5 text-[11px] text-slate-500">Updated: {fmtTime(rec.marked_at, tz)}{rec.is_late && <span className="ml-1 font-semibold text-orange-600">Late</span>}</div>}
+      {rec && rec.source === 'auto_day1' && <div className="mt-0.5 text-[11px] text-slate-500">Day 1 · auto</div>}
+      {rec && rec.source !== 'auto_day1' && <div className="mt-0.5 text-[11px] text-slate-500">Updated: {fmtTime(rec.marked_at, tz)}{rec.is_late && <span className="ml-1 font-semibold text-orange-600">Late</span>}</div>}
       {onOpen && info.canMark && <button onClick={() => onOpen(dateKey)} className={actionClass(info.status === 'not_filled')}>Mark Attendance</button>}
       {onOpen && rec && <button onClick={() => onOpen(dateKey)} className="mt-2 text-xs font-semibold text-ink-600 hover:underline">Change</button>}
     </Shell>
