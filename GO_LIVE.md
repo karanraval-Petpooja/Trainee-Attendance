@@ -13,6 +13,7 @@ Run any you haven't run yet, in this order:
 9. `supabase/update_ojt.sql`
 10. `supabase/update_sync_button.sql`
 11. `supabase/update_personal_email.sql`
+12. `supabase/update_feedback.sql` (Feedback Report)
 (Fresh project instead? Run only `supabase/FULL_INSTALL.sql`.)
 
 ## B. Put the code on GitHub
@@ -61,3 +62,14 @@ Run any you haven't run yet, in this order:
 
 ## E. Every update after this
 Replace the changed folders in your project → upload the changed files to GitHub (or re-upload the folder) → Vercel redeploys by itself → run any new `.sql` file.
+
+## F. Feedback Report (feedback form responses → app)
+1. Supabase → SQL Editor: run `supabase/update_feedback.sql`.
+2. Google script: paste the latest `public/training-log.gs` into the SAME Apps Script project (it has the feedback sync), check `CONFIG.FEEDBACK`
+   (`SHEET_ID` = the responses sheet, `TABS` = one `{ FORM_ID, TAB_GID }` per form: nht | sales | upskill | ojt-pip).
+   YOUR Google account needs view access to the responses sheet.
+3. Run `syncFeedback` once (allow access), then **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**, then run `createTrigger` (refreshes every 2 hours).
+4. Deploy the app, open Reports → Feedback Report → **Refresh from sheet**.
+
+How people are matched: E Code → email (official or personal) → exact name (only when ONE trainee has that name). A response that cannot be matched is listed under
+“Responses not linked to a trainee”; a manager links it by hand. A trainer sees only the feedback of trainees they have or had, or that names them as the trainer.

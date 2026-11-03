@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
+  LogOut, Menu, MessageSquareText, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -22,6 +22,7 @@ export const useApp = () => useContext(Ctx);
 const REPORTS = [
   { href: '/reports', label: 'Monthly Sheet', icon: FileSpreadsheet },
   { href: '/rag', label: 'RAG Report', icon: Flag },
+  { href: '/feedback-report', label: 'Feedback Report', icon: MessageSquareText },
   { href: '/history', label: 'Attendance History', icon: History },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
 ];

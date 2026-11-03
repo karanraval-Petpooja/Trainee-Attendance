@@ -122,6 +122,10 @@ supabase/update_dossier_rag.sql      adds RAG, Dossier fields and attendance imp
 supabase/update_rag_review.sql       trainer/manager RAG updates, no approval (keeps data)
 supabase/remove_demo_data.sql        deletes demo data before going live
 app/(app)/rag                        RAG & remarks report
+app/(app)/feedback-report            feedback responses + who is pending (per trainer)
+lib/feedbackSheet.js                 reads the feedback sheet columns by heading
+app/api/feedback-sync, feedback-run  receives the sheet from the Google script / Refresh button
+supabase/update_feedback.sql         feedback responses, matching and per-trainer access
 lib/parseDossier.js                  Dossier paste parser
 lib/dossierSync.js                   shared rules for Dossier import / sync
 app/api/dossier-sync                 endpoint the Google script sends rows to
