@@ -76,7 +76,7 @@ export default function FeedbackReportPage() {
   const [form, setForm] = useState('nht');
   const meta = formById(form);
   const tracked = Boolean(TRACK[form]);
-  const { trainees, loading, reload: reloadTrainees } = useTrainees({ trainerId: isManager ? null : profile.id });
+  const { trainees, loading, reload: reloadTrainees } = useTrainees({ includeInactive: true, trainerId: isManager ? null : profile.id });
   const { trainers } = useTrainers();
   const { rows: responses, loading: rLoading, reload: reloadResponses } = useFeedback(form);
   const names = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
@@ -108,7 +108,22 @@ export default function FeedbackReportPage() {
   }, [isManager, rLoading, unmatched.length, form, reloadResponses]);
 
   const pool = useMemo(() => scopeTo(trainees, trainerId), [trainees, trainerId]);
-  const inForm = useMemo(() => (tracked ? pool.filter((t) => !notJoining(t) && TRACK[form](t)) : []), [pool, tracked, form]);
+  // Everyone who has given feedback is listed (even if removed from attendance later). Someone with NO feedback is "pending"
+  // only if they can still be asked: active, joined, and not resigned / not certified / dropped out.
+  const expected = (t) => t.status === 'active' && !notJoining(t) && (!t.exit_reason || t.exit_reason === 'handover');
+  const inForm = useMemo(() => (tracked ? pool.filter((t) => TRACK[form](t) && (byTrainee[t.id] || expected(t))) : []), [pool, tracked, form, byTrainee]); // eslint-disable-line react-hooks/exhaustive-deps
+  const inFormIds = useMemo(() => new Set(inForm.map((t) => t.id)), [inForm]);
+  const tById = useMemo(() => Object.fromEntries(trainees.map((t) => [t.id, t])), [trainees]);
+  // Account for EVERY response, so the numbers always add up
+  const recon = useMemo(() => {
+    const linked = responses.filter((r) => r.trainee_id);
+    const inList = linked.filter((r) => inFormIds.has(r.trainee_id));
+    const distinct = new Set(inList.map((r) => r.trainee_id)).size;
+    return { total: responses.length, distinct, repeats: inList.length - distinct, outside: linked.length - inList.length, unlinked: unmatched.length };
+  }, [responses, inFormIds, unmatched.length]);
+  const lastRead = useMemo(() => responses.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), ''), [responses]);
+  // Shown at the bottom: not linked to anyone, or linked to someone who is not in the list above
+  const rest = tracked ? responses.filter((r) => !r.trainee_id || (trainerId === 'all' && !inFormIds.has(r.trainee_id))) : responses;
   const finished = (t) => !traineeActiveOn(t, now.date) || sentToFloor(t);
   const afterTraining = useMemo(() => inForm.filter((t) => training === 'all' || (training === 'finished' ? finished(t) : !finished(t))), [inForm, training, now.date]); // eslint-disable-line react-hooks/exhaustive-deps
   const batches = useMemo(() => {
@@ -208,6 +223,17 @@ export default function FeedbackReportPage() {
               <StatCard label="Response rate" value={rate === null ? '—' : `${rate}%`} tone="ink" />
             </div>
 
+            {trainerId === 'all' && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+                <b>{recon.total}</b> response{recon.total === 1 ? '' : 's'} read from the sheet{lastRead ? ` (last read ${fmtDateTime(lastRead, tz)})` : ''} =
+                {' '}<b>{recon.distinct}</b> trainee{recon.distinct === 1 ? '' : 's'} counted above
+                {recon.repeats > 0 && <> + <b>{recon.repeats}</b> repeat submission{recon.repeats === 1 ? '' : 's'} by the same trainee</>}
+                {recon.outside > 0 && <> + <b>{recon.outside}</b> linked to someone not in this list</>}
+                {recon.unlinked > 0 && <> + <b>{recon.unlinked}</b> not linked to any trainee</>}.
+                {(recon.outside > 0 || recon.unlinked > 0) && ' See the table at the bottom.'}
+              </div>
+            )}
+
             {batches.length > 0 && (
               <div className="panel p-4">
                 <div className="mb-2 text-xs font-semibold text-slate-500">By batch (tap to open)</div>
@@ -297,24 +323,25 @@ export default function FeedbackReportPage() {
 
         <div className="panel overflow-hidden">
           <div className="border-b border-slate-100 px-4 py-3">
-            <div className="text-sm font-semibold text-slate-700">{tracked ? 'Responses not linked to a trainee' : `${meta.label} responses`} ({tracked ? unmatched.length : responses.length})</div>
-            {tracked && <div className="text-xs text-slate-500">{isManager ? 'The name / email in the form did not match one trainee. Link it by hand so it counts.' : 'These name you as the trainer but could not be matched to one of your trainees.'}</div>}
+            <div className="text-sm font-semibold text-slate-700">{tracked ? 'Responses not counted above' : `${meta.label} responses`} ({rest.length})</div>
+            {tracked && <div className="text-xs text-slate-500">{isManager ? 'The name / email in the form did not match one trainee (or matched someone who is not in the list above). Link it by hand so it counts.' : 'These name you as the trainer but could not be matched to one of your trainees.'}</div>}
           </div>
-          {(tracked ? unmatched : responses).length === 0 ? (
+          {rest.length === 0 ? (
             <Empty title={responses.length || !isManager ? 'Nothing here' : 'No responses received yet'}>
               {!responses.length && isManager ? 'Tap “Refresh from sheet”. If it fails: run supabase/update_feedback.sql, paste the latest Google script and deploy a new version (GO_LIVE.md).' : undefined}
             </Empty>
           ) : (
             <div className="table-wrap max-h-[50vh] overflow-y-auto">
               <table className="tbl">
-                <thead className="sticky top-0 z-10"><tr><th>Name in form</th><th>Email</th><th>Trainer in form</th><th>Batch in form</th><th>Submitted</th><th /></tr></thead>
+                <thead className="sticky top-0 z-10"><tr><th>Name in form</th><th>Email</th><th>Trainer in form</th><th>Batch in form</th>{tracked && <th>Status</th>}<th>Submitted</th><th /></tr></thead>
                 <tbody>
-                  {(tracked ? unmatched : responses).map((r) => (
+                  {rest.map((r) => (
                     <tr key={r.id}>
                       <td className="font-semibold text-slate-800">{r.respondent_name || '—'}</td>
                       <td className="text-slate-600">{r.respondent_email || '—'}</td>
                       <td className="text-slate-600">{r.trainer_name || (r.trainer_id ? names[r.trainer_id] : '') || '—'}</td>
                       <td className="text-slate-600">{r.batch_code || '—'}</td>
+                      {tracked && <td className="text-xs text-slate-600">{r.trainee_id ? `Linked to ${tById[r.trainee_id]?.name || 'a trainee'}, not in the list above` : 'Not linked'}</td>}
                       <td className="text-xs text-slate-500">{r.submitted_at ? fmtDateTime(r.submitted_at, tz) : '—'}</td>
                       <td className="space-x-1">
                         <button className="btn-ghost btn-sm" onClick={() => setOpen({ id: r.id, title: `${r.respondent_name || 'Response'} · ${meta.label} feedback` })}>View</button>
