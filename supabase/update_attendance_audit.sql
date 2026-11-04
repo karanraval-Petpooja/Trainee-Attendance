@@ -27,9 +27,19 @@ create index if not exists attendance_log_trainee_idx on public.attendance_log (
 create index if not exists attendance_log_at_idx      on public.attendance_log (changed_at desc);
 
 alter table public.attendance_log enable row level security;
+-- Same visibility as the attendance entries themselves: a manager, a trainer who has "Reports for all trainees",
+-- or the trainee's own trainer. (Anyone who can SEE an entry in Attendance History can open its log.)
 drop policy if exists attendance_log_select on public.attendance_log;
-create policy attendance_log_select on public.attendance_log for select to authenticated
-  using (public.is_manager() or trainee_id in (select public.my_trainee_ids()));
+do $$
+begin
+  if to_regprocedure('public.has_report_access()') is not null then
+    execute 'create policy attendance_log_select on public.attendance_log for select to authenticated
+             using (public.is_manager() or public.has_report_access() or trainee_id in (select public.my_trainee_ids()))';
+  else
+    execute 'create policy attendance_log_select on public.attendance_log for select to authenticated
+             using (public.is_manager() or trainee_id in (select public.my_trainee_ids()))';
+  end if;
+end $$;
 -- No insert / update / delete policy: only the trigger below writes.
 
 -- Saving the SAME status again must not replace who marked it (a person who re-saves, or a manager re-importing, is not "the marker").

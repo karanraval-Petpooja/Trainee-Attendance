@@ -2,52 +2,14 @@
 import { useMemo, useState } from 'react';
 import { Download, FileSpreadsheet, ScrollText } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
-import { Empty, Modal, PageHeader, PageLoader, Spinner, StatusChip } from '@/components/ui';
+import { Empty, PageHeader, PageLoader, StatusChip } from '@/components/ui';
+import { LogModal, markerText } from '@/components/AttendanceLog';
 import { useAttendance, useProfileNames, useTrainees, useTrainers } from '@/lib/hooks';
-import { sb } from '@/lib/supabase';
-import { diffDays, endOfMonth, fmtDateTime, fmtDay, fmtMedium, fmtTime, MONTHS, minKey, pad, rangeKeys, startOfMonth } from '@/lib/dates';
+import { diffDays, endOfMonth, fmtDay, fmtMedium, fmtTime, MONTHS, minKey, pad, rangeKeys, startOfMonth } from '@/lib/dates';
 import { computeStatus, scopeTo, STATUS, traineeActiveOn, trainerOn } from '@/lib/status';
 import { downloadTableXlsx } from '@/lib/monthlySheet';
 
 const STATUSES = ['present', 'absent', 'half_day', 'holiday', 'week_off', 'not_filled', 'pending'];
-const STATUS_WORD = { present: 'Present', absent: 'Absent', half_day: 'Half Day', holiday: 'Holiday' };
-
-// Who set this entry: a trainer / manager, the automatic Day 1 rule, or a Dossier import (by the manager who uploaded it)
-function markerText(rec, people) {
-  if (!rec) return '';
-  if (rec.source === 'auto_day1') return 'Auto · Day 1';
-  const p = people[rec.marked_by];
-  const who = p ? `${p.name}${p.role === 'manager' ? ' (manager)' : ''}` : rec.marked_by ? 'Removed user' : 'System';
-  return rec.source === 'dossier' ? `${who} · Dossier import` : who;
-}
-
-function LogModal({ row, people, tz, onClose }) {
-  const [log, setLog] = useState(null);
-  useEffect(() => {
-    sb().from('attendance_log').select('*').eq('trainee_id', row.t.id).eq('attendance_date', row.k).order('id')
-      .then(({ data }) => setLog(data || []));
-  }, [row.t.id, row.k]);
-  return (
-    <Modal title={`${row.t.name} · ${fmtMedium(row.k)}`} onClose={onClose} footer={<button className="btn-secondary" onClick={onClose}>Close</button>}>
-      {log === null ? <div className="py-6 text-center"><Spinner /></div> : log.length === 0 ? (
-        <p className="text-sm text-slate-500">No changes were recorded for this day.</p>
-      ) : (
-        <ol className="space-y-3">
-          {log.map((l) => (
-            <li key={l.id} className="rounded-xl border border-slate-100 p-3 text-sm">
-              <div className="font-semibold text-slate-800">{l.old_status ? `${STATUS_WORD[l.old_status] || l.old_status} → ${STATUS_WORD[l.new_status] || l.new_status}` : `Marked ${STATUS_WORD[l.new_status] || l.new_status}`}</div>
-              <div className="mt-0.5 text-xs text-slate-500">
-                {markerText({ source: l.source, marked_by: l.changed_by }, people)} · {fmtDateTime(l.changed_at, tz)}{l.is_late && l.old_status === null ? ' · late' : ''}
-              </div>
-              {l.note && <div className="mt-1 text-xs text-slate-400">{l.note}</div>}
-            </li>
-          ))}
-        </ol>
-      )}
-    </Modal>
-  );
-}
-
 export default function HistoryPage() {
   const { profile, settings, now, tz } = useApp();
   const isManager = profile.role === 'manager';

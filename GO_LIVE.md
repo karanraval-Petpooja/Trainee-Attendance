@@ -16,7 +16,6 @@ Run any you haven't run yet, in this order:
 12. `supabase/update_feedback.sql` (Feedback Report)
 13. `supabase/update_lms_results.sql` (LMS Results)
 14. `supabase/update_attendance_audit.sql` (Who marked + Day 1 present)
-
 (Fresh project instead? Run only `supabase/FULL_INSTALL.sql`.)
 
 ## B. Put the code on GitHub
@@ -77,7 +76,6 @@ Replace the changed folders in your project → upload the changed files to GitH
 How people are matched: E Code → email (official or personal) → exact name (only when ONE trainee has that name). A response that cannot be matched is listed under
 “Responses not linked to a trainee”; a manager links it by hand. A trainer sees only the feedback of trainees they have or had, or that names them as the trainer.
 
-
 ## G. LMS results (learn.petpooja.com → app)
 1. Supabase → SQL Editor: run `supabase/update_lms_results.sql`.
 2. Make a long random secret (for example, run `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`),
@@ -89,4 +87,3 @@ How people are matched: E Code → email (official or personal) → exact name (
 1. Supabase → SQL Editor: run `supabase/update_attendance_audit.sql` (safe to run again).
 2. Day 1 is applied only to trainees whose joining date is on / after the day you run it, so past reports do not change.
    To include earlier trainees (this changes past reports), see the comments at the end of that file.
-
