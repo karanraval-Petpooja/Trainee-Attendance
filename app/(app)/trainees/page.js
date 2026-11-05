@@ -13,6 +13,7 @@ import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
 import PeriodEditor from '@/components/trainees/PeriodEditor';
 import NhtFeedbackShare from '@/components/NhtFeedbackShare';
+import LmsExport, { LmsExportButton } from '@/components/trainees/LmsExport';
 import { FEEDBACK_FORMS } from '@/lib/feedbackForms';
 
 const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -766,6 +767,7 @@ export default function TraineesPage() {
   const [switchItems, setSwitchItems] = useState(null); // { items, title }
   const [newBatch, setNewBatch] = useState(false);
   const [dossier, setDossier] = useState(false);
+  const [lmsOpen, setLmsOpen] = useState(false);
   const [ragFor, setRagFor] = useState(null);
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
   const [batchFilter, setBatchFilter] = useState('all');
@@ -872,6 +874,7 @@ export default function TraineesPage() {
         actions={(
           <>
             {isManager && <button data-tour="upload-dossier" className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
+            <LmsExportButton onClick={() => setLmsOpen(true)} />
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
             <button className="btn-primary" onClick={() => setForm(blank)}><Plus size={16} />Add Trainee</button>
@@ -1106,6 +1109,7 @@ export default function TraineesPage() {
       {moveItems && <MoveToBatch items={moveItems} batches={batches} trainees={trainees} trainerNames={trainerNames} onClose={() => setMoveItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {switchItems && <SwitchTrainer items={switchItems.items} title={switchItems.title} trainers={trainers} trainerNames={trainerNames} onClose={() => setSwitchItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {dossier && <DossierImport trainers={trainers} trainees={trainees} onClose={() => setDossier(false)} onDone={(m) => { showToast(m); reload(); }} />}
+      {lmsOpen && <LmsExport trainees={trainees} batches={batches} trainers={trainers} onClose={() => setLmsOpen(false)} />}
       {newBatch && <NewBatch trainers={trainers} batches={batches} onClose={() => setNewBatch(false)} onDone={(m, id) => { showToast(m); reload(); if (id) { setBatchFilter(id); setShow('all'); } }} />}
       {floor && floor.items.length > 0 && (
         <SentToFloorModal items={floor.items} undo={floor.undo} onClose={() => setFloor(null)}

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, MessageSquareText, Settings, UserCircle, UserPlus, Users, X, Contact, QrCode, Sparkles,
+  LogOut, Menu, MessageSquareText, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -38,7 +38,6 @@ const TRAINER_GROUPS = [
   {
     id: 'data', title: 'Data & Setup', items: [
       { href: '/trainees', label: 'My Trainees & Batches', icon: GraduationCap },
-      { href: '/lms-users', label: 'LMS User Export', icon: UserPlus },
     ]
   },
   {
@@ -69,7 +68,6 @@ const MANAGER_GROUPS = [
       { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
       { href: '/trainers', label: 'Trainers', icon: Users },
       { href: '/contacts', label: 'Contact Details', icon: Contact },
-      { href: '/lms-users', label: 'LMS User Export', icon: UserPlus },
       { href: '/settings', label: 'Settings', icon: Settings },
     ]
   },
