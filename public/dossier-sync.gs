@@ -21,7 +21,7 @@
  *     First time with Feedback: also choose "syncFeedback" → Run once (allow access to the feedback sheet).
  *  After changing this code later: Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy.
  */
-const SCRIPT_VERSION = '2026-11-02 feedback-v12'; // shown in the log, so you can see which code is running
+const SCRIPT_VERSION = '2026-11-06 feedback-v13'; // shown in the log, so you can see which code is running
 
 const CONFIG = {
   APP_URL: 'https://YOUR-APP.vercel.app',          // your app address (no / at the end)
@@ -40,6 +40,8 @@ const CONFIG = {
     TABS: [
       { FORM_ID: 'nht', TAB_GID: 397834801 },        // the tab from the link (…#gid=397834801). Change FORM_ID if this tab is another form.
       // { FORM_ID: 'sales', TAB_GID: 0 },            // add the other forms the same way (their own tab, or SHEET_ID: '…' for another file)
+      // A sheet whose feedback is ALL for one trainer (the form has no trainer question): every response goes to that trainer only
+      // { FORM_ID: 'nht', SHEET_ID: '…', TAB_NAME: 'Form responses 1', TRAINER_NAME: 'Jasmin Babla' },   // or TRAINER_EMAIL: 'jasmin@…' if the name does not match
       // { FORM_ID: 'nht', TAB_NAME: 'Old NHT responses' },   // OLDER feedback: another tab / older form of the same type, same FORM_ID
     ],
     REFRESH_EVERY_HOURS: 2,                         // automatic refresh (1, 2, 4, 6, 8 or 12); also on demand in the app
@@ -286,18 +288,22 @@ function syncFeedback() {
   const out = { ok: true, rows: 0, removed: 0, matched: 0, forms: {} };
   c.TABS.forEach(function (tab) {
     const book = SpreadsheetApp.openById(tab.SHEET_ID || c.SHEET_ID);
-    const sheet = book.getSheets().filter(function (t) { return String(t.getSheetId()) === String(tab.TAB_GID); })[0]
-      || (tab.TAB_NAME ? book.getSheetByName(tab.TAB_NAME) : null);
+    const tabs = book.getSheets();
+    const sheet = tabs.filter(function (t) { return String(t.getSheetId()) === String(tab.TAB_GID); })[0]
+      || (tab.TAB_NAME ? book.getSheetByName(tab.TAB_NAME) : null)
+      || ((tab.TAB_GID === undefined || tab.TAB_GID === '') && !tab.TAB_NAME ? tabs[0] : null)   // no tab named: the first one (a Google Form sheet has one)
+      || (tabs.length === 1 ? tabs[0] : null);
     if (!sheet) throw new Error('Feedback: tab not found (' + tab.FORM_ID + ', gid ' + tab.TAB_GID + '). Tabs: ' + book.getSheets().map(function (t) { return t.getName() + ' (gid ' + t.getSheetId() + ')'; }).join(', '));
     const data = feedbackRows_(sheet);
     if (!data || !data.rows.length) { Logger.log('Feedback ' + tab.FORM_ID + ' (tab "' + sheet.getName() + '"): no responses yet.'); out.forms[tab.FORM_ID] = 0; return; }
     const runId = Utilities.getUuid();
     const step = 200;
+    var assignedTo = '';
     for (var i = 0; i < data.rows.length; i += step) {
       const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/feedback-sync', {
         method: 'post', contentType: 'application/json', muteHttpExceptions: true,
         headers: { 'x-sync-secret': String(CONFIG.SYNC_SECRET).trim() },
-        payload: JSON.stringify({ formId: tab.FORM_ID, source: (tab.SHEET_ID || c.SHEET_ID) + ':' + (tab.TAB_GID !== undefined && tab.TAB_GID !== '' ? tab.TAB_GID : tab.TAB_NAME), header: data.header, rows: data.rows.slice(i, i + step), runId: runId, final: i + step >= data.rows.length, totalRows: data.rows.length }),
+        payload: JSON.stringify({ formId: tab.FORM_ID, source: (tab.SHEET_ID || c.SHEET_ID) + ':' + sheet.getSheetId(), trainerName: tab.TRAINER_NAME || '', trainerEmail: tab.TRAINER_EMAIL || '', header: data.header, rows: data.rows.slice(i, i + step), runId: runId, final: i + step >= data.rows.length, totalRows: data.rows.length }),
       });
       const code = res.getResponseCode(); const text = res.getContentText() || '';
       var body = null;
@@ -307,9 +313,10 @@ function syncFeedback() {
       }
       if (!body.ok) throw new Error('Feedback ' + tab.FORM_ID + ': HTTP ' + code + ' – ' + (body.error || 'error'));
       out.rows += body.rows; out.removed += body.removed || 0; out.matched += body.matched || 0;
+      if (body.trainer) assignedTo = body.trainer;
     }
     out.forms[tab.FORM_ID] = (out.forms[tab.FORM_ID] || 0) + data.rows.length;
-    Logger.log('Feedback ' + tab.FORM_ID + ' (tab "' + sheet.getName() + '"): ' + data.rows.length + ' responses sent.');
+    Logger.log('Feedback ' + tab.FORM_ID + ' (tab "' + sheet.getName() + '"): ' + data.rows.length + ' responses sent' + (assignedTo ? ', all attached to trainer ' + assignedTo : '') + '.');
   });
   return out;
 }
