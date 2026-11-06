@@ -97,6 +97,9 @@ export default function FeedbackReportPage() {
   const { trainees, loading, reload: reloadTrainees } = useTrainees({ includeInactive: true, includeDeleted: true, trainerId: isManager ? null : profile.id });
   const { trainers } = useTrainers();
   const { rows: responses, loading: rLoading, reload: reloadResponses } = useFeedback(form);
+  // The other tracked form too: it tells us which batches are filling THAT form, so they are not listed as pending here
+  const otherForm = form === 'sales' ? 'nht' : 'sales';
+  const { rows: otherResponses, reload: reloadOther } = useFeedback(otherForm);
   const names = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
 
   const [q, setQ] = useState('');
@@ -129,7 +132,23 @@ export default function FeedbackReportPage() {
   // Everyone who has given feedback is listed (even if removed from attendance later). Someone with NO feedback is "pending"
   // only if they can still be asked: active, joined, and not resigned / not certified / dropped out.
   const expected = (t) => t.status === 'active' && !t.deleted_at && !notJoining(t) && (!t.exit_reason || t.exit_reason === 'handover');
-  const inForm = useMemo(() => (tracked ? pool.filter((t) => TRACK[form](t) && (byTrainee[t.id] || expected(t))) : []), [pool, tracked, form, byTrainee]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Who belongs to THIS form? Not the batch label alone (a batch can be labelled "NHT" while it is really filling the Sales
+  // form). Someone with feedback in this form belongs to it, and so does the rest of their batch. A batch that is filling the
+  // OTHER form is left out. Only when there is no feedback either way does the batch label decide.
+  const inForm = useMemo(() => {
+    if (!tracked) return [];
+    const byId = Object.fromEntries(pool.map((t) => [t.id, t]));
+    const batchesOf = (rs) => new Set(rs.filter((r) => r.trainee_id && byId[r.trainee_id]?.batch_id).map((r) => byId[r.trainee_id].batch_id));
+    const mine = batchesOf(responses); const theirs = batchesOf(otherResponses);
+    const gaveOther = new Set(otherResponses.filter((r) => r.trainee_id).map((r) => r.trainee_id));
+    return pool.filter((t) => {
+      if (byTrainee[t.id]) return true;                                    // has feedback in this form
+      if (!expected(t) || gaveOther.has(t.id)) return false;               // cannot be asked, or gave the other form's feedback
+      const m = mine.has(t.batch_id); const o = theirs.has(t.batch_id);
+      if (m !== o) return m;                                               // their batch clearly fills one of the two forms
+      return TRACK[form](t);                                               // no evidence either way: the batch label decides
+    });
+  }, [pool, tracked, form, byTrainee, responses, otherResponses]); // eslint-disable-line react-hooks/exhaustive-deps
   const inFormIds = useMemo(() => new Set(inForm.map((t) => t.id)), [inForm]);
   const tById = useMemo(() => Object.fromEntries(trainees.map((t) => [t.id, t])), [trainees]);
   // Account for EVERY response, so the numbers always add up
@@ -193,7 +212,7 @@ export default function FeedbackReportPage() {
     try {
       const j = await authFetch('/api/feedback-run', { method: 'POST' });
       showToast(j.running ? j.message : `Feedback sheet read: ${j.rows} response${j.rows === 1 ? '' : 's'}${j.matched ? `, ${j.matched} newly matched` : ''}.`);
-      await Promise.all([reloadResponses(), reloadTrainees()]);
+      await Promise.all([reloadResponses(), reloadOther(), reloadTrainees()]);
     } catch (e) { showToast(e.message, 'error'); }
     setRefreshing(false);
   };
