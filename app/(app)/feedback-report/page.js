@@ -4,7 +4,8 @@ import { ClipboardCopy, FileSpreadsheet, Link2, RefreshCw, Search, Star } from '
 import { useApp } from '@/components/AppShell';
 import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner, StatCard } from '@/components/ui';
 import { authFetch, sb } from '@/lib/supabase';
-import { fetchAll, useFeedback, useTrainees, useTrainers } from '@/lib/hooks';
+import { fetchAll, useTrainees, useTrainers } from '@/lib/hooks';
+import { useFeedback } from '@/lib/useFeedback';
 import { fmtDateTime } from '@/lib/dates';
 import { FEEDBACK_FORMS, formById } from '@/lib/feedbackForms';
 import { EXIT_LABELS, notJoining, scopeTo, sentToFloor, traineeActiveOn } from '@/lib/status';
@@ -128,7 +129,23 @@ export default function FeedbackReportPage() {
     sb().rpc('match_feedback_responses').then(({ data }) => { if (Number(data) > 0) reloadResponses(); });
   }, [isManager, rLoading, unmatched.length, form, reloadResponses]);
 
-  const pool = useMemo(() => scopeTo(trainees, trainerId), [trainees, trainerId]);
+  // A response that names ME as the trainer can be linked to a trainee who is not in my own trainee list (a trainer cannot read
+  // other trainers' trainees). It still belongs in the normal list: its name, E Code and batch were copied onto the response.
+  const ghosts = useMemo(() => {
+    if (!tracked) return [];
+    const mine = new Set(trainees.map((t) => t.id));
+    const seen = new Set();
+    const out = [];
+    responses.forEach((r) => {
+      if (!r.trainee_id || mine.has(r.trainee_id) || seen.has(r.trainee_id)) return;
+      seen.add(r.trainee_id);
+      out.push({ id: r.trainee_id, ghost: true, name: r.matched_name || r.respondent_name || r.respondent_email || 'Trainee', employee_code: r.matched_code || null,
+        official_email: r.respondent_email || null, status: 'active', trainer_id: r.trainer_id, batch_id: null, _batch: r.matched_batch ? { code: r.matched_batch } : null, deleted_at: null });
+    });
+    return out;
+  }, [trainees, responses, tracked]);
+  const pool = useMemo(() => [...scopeTo(trainees, trainerId), ...(trainerId === 'all' ? ghosts : [])], [trainees, trainerId, ghosts]);
+  const batchKey = (t) => t._batch?.code || t.batch_id || 'none';   // a batch code is unique, so people of one batch always group together
   // Everyone who has given feedback is listed (even if removed from attendance later). Someone with NO feedback is "pending"
   // only if they can still be asked: active, joined, and not resigned / not certified / dropped out.
   const expected = (t) => t.status === 'active' && !t.deleted_at && !notJoining(t) && (!t.exit_reason || t.exit_reason === 'handover');
@@ -161,13 +178,13 @@ export default function FeedbackReportPage() {
   const lastRead = useMemo(() => responses.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), ''), [responses]);
   // Shown at the bottom: not linked to anyone, or linked to someone who is not in the list above
   const rest = tracked ? responses.filter((r) => !r.trainee_id || (trainerId === 'all' && !inFormIds.has(r.trainee_id))) : responses;
-  const finished = (t) => !traineeActiveOn(t, now.date) || sentToFloor(t);
-  const stageLabel = (t) => (t.deleted_at ? 'Removed' : t.exit_reason && t.exit_reason !== 'handover' ? EXIT_LABELS[t.exit_reason] || 'Left' : finished(t) ? 'Finished' : 'In training');
-  const afterTraining = useMemo(() => inForm.filter((t) => training === 'all' || (training === 'finished' ? finished(t) : !finished(t))), [inForm, training, now.date]); // eslint-disable-line react-hooks/exhaustive-deps
+  const finished = (t) => t.ghost || !traineeActiveOn(t, now.date) || sentToFloor(t);
+  const stageLabel = (t) => (t.ghost ? '' : t.deleted_at ? 'Removed' : t.exit_reason && t.exit_reason !== 'handover' ? EXIT_LABELS[t.exit_reason] || 'Left' : finished(t) ? 'Finished' : 'In training');
+  const afterTraining = useMemo(() => inForm.filter((t) => t.ghost || training === 'all' || (training === 'finished' ? finished(t) : !finished(t))), [inForm, training, now.date]); // eslint-disable-line react-hooks/exhaustive-deps
   const batches = useMemo(() => {
     const m = new Map();
     afterTraining.forEach((t) => {
-      const k = t.batch_id || 'none';
+      const k = batchKey(t);
       const g = m.get(k) || { id: k, code: t._batch?.code || 'No batch', total: 0, done: 0 };
       g.total += 1; if (byTrainee[t.id]) g.done += 1;
       m.set(k, g);
@@ -175,7 +192,7 @@ export default function FeedbackReportPage() {
     return [...m.values()].sort((a, b) => (b.total - b.done) - (a.total - a.done) || a.code.localeCompare(b.code));
   }, [afterTraining, byTrainee]);
 
-  const scoped = afterTraining.filter((t) => batchId === 'all' || (t.batch_id || 'none') === batchId);
+  const scoped = afterTraining.filter((t) => batchId === 'all' || batchKey(t) === batchId);
   const submitted = scoped.filter((t) => byTrainee[t.id]).length;
   const pending = scoped.length - submitted;
   const rows = scoped
@@ -410,7 +427,7 @@ export default function FeedbackReportPage() {
                         return (
                           <tr key={t.id} className={r ? '' : 'bg-amber-50/40'}>
                             <td className="text-slate-600">{t.employee_code || '—'}</td>
-                            <td className="font-semibold text-slate-800">{t.name}</td>
+                            <td><div className="font-semibold text-slate-800">{t.name}</div>{t.ghost && <div className="text-[11px] text-slate-400">Named you as the trainer</div>}</td>
                             <td className="text-slate-600">{t._batch?.code || '—'}</td>
                             {isManager && <td className="text-slate-600">{trainerOf(t)}</td>}
                             <td className="text-slate-600">{stageLabel(t)}</td>
