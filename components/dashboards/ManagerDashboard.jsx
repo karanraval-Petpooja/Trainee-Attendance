@@ -8,6 +8,7 @@ import { groupStatus, scopeTo, sentToFloor, traineeActiveOn, weekOffReason } fro
 import { useAlerts, useAttendance, useTrainees, useTrainers } from '@/lib/hooks';
 import { useApp } from '../AppShell';
 import { Empty, PageLoader, StatCard } from '../ui';
+import TraineeInsights from './TraineeInsights';
 
 export default function ManagerDashboard() {
   const { settings, now, tz } = useApp();
@@ -194,6 +195,7 @@ export default function ManagerDashboard() {
           })}
         </div>
       </section>
+      <TraineeInsights trainees={trainees} trainers={trainers} today={today} />
     </div>
   );
 }
