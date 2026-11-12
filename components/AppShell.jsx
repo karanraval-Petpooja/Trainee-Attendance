@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, MessageSquareText, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
+  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -22,69 +22,52 @@ export const useApp = () => useContext(Ctx);
 const REPORTS = [
   { href: '/reports', label: 'Monthly Sheet', icon: FileSpreadsheet },
   { href: '/rag', label: 'RAG Report', icon: Flag },
-  { href: '/feedback-report', label: 'Feedback Report', icon: MessageSquareText },
-  { href: '/lms-results', label: 'LMS Results', icon: GraduationCap },
   { href: '/history', label: 'Attendance History', icon: History },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/overview', label: 'Training overview', icon: PieChart },
 ];
 const TRAINER_GROUPS = [
   { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
-  {
-    id: 'attendance', title: 'Attendance', items: [
-      { href: '/attendance', label: 'Mark Attendance', icon: CheckCircle2 },
-      { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
-    ]
-  },
-  {
-    id: 'data', title: 'Data & Setup', items: [
-      { href: '/trainees', label: 'My Trainees & Batches', icon: GraduationCap },
-    ]
-  },
-  {
-    id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
-      { href: '/ojt', label: 'Sessions', icon: ClipboardList },
-      { href: '/ojt/charts', label: 'Charts', icon: PieChart },
-    ]
-  },
+  { id: 'attendance', title: 'Attendance', items: [
+    { href: '/attendance', label: 'Mark Attendance', icon: CheckCircle2 },
+    { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
+  ] },
+  { id: 'data', title: 'Data & Setup', items: [
+    { href: '/trainees', label: 'My Trainees & Batches', icon: GraduationCap },
+  ] },
+  { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
+    { href: '/ojt', label: 'Sessions', icon: ClipboardList },
+    { href: '/ojt/charts', label: 'Charts', icon: PieChart },
+  ] },
   { id: 'reports', title: 'Reports', items: REPORTS },
-  {
-    id: 'account', title: 'Account', items: [
-      { href: '/notifications', label: 'Notifications', icon: Bell },
-      { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
-      { href: '/profile', label: 'Profile', icon: UserCircle },
-    ]
-  },
+  { id: 'account', title: 'Account', items: [
+    { href: '/notifications', label: 'Notifications', icon: Bell },
+    { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
+    { href: '/profile', label: 'Profile', icon: UserCircle },
+  ] },
 ];
 const MANAGER_GROUPS = [
   { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
-  {
-    id: 'attendance', title: 'Attendance', items: [
-      { href: '/attendance', label: 'Attendance Register', icon: CheckCircle2 },
-      { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
-    ]
-  },
-  {
-    id: 'data', title: 'Data & Setup', items: [
-      { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
-      { href: '/trainers', label: 'Trainers', icon: Users },
-      { href: '/contacts', label: 'Contact Details', icon: Contact },
-      { href: '/settings', label: 'Settings', icon: Settings },
-    ]
-  },
-  {
-    id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
-      { href: '/ojt', label: 'Sessions', icon: ClipboardList },
-      { href: '/ojt/charts', label: 'Charts', icon: PieChart },
-    ]
-  },
+  { id: 'attendance', title: 'Attendance', items: [
+    { href: '/attendance', label: 'Attendance Register', icon: CheckCircle2 },
+    { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
+  ] },
+  { id: 'data', title: 'Data & Setup', items: [
+    { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
+    { href: '/trainers', label: 'Trainers', icon: Users },
+    { href: '/contacts', label: 'Contact Details', icon: Contact },
+    { href: '/settings', label: 'Settings', icon: Settings },
+  ] },
+  { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
+    { href: '/ojt', label: 'Sessions', icon: ClipboardList },
+    { href: '/ojt/charts', label: 'Charts', icon: PieChart },
+  ] },
   { id: 'reports', title: 'Reports', items: REPORTS },
-  {
-    id: 'account', title: 'Account', items: [
-      { href: '/notifications', label: 'Notifications', icon: Bell },
-      { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
-      { href: '/profile', label: 'Profile', icon: UserCircle },
-    ]
-  },
+  { id: 'account', title: 'Account', items: [
+    { href: '/notifications', label: 'Notifications', icon: Bell },
+    { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
+    { href: '/profile', label: 'Profile', icon: UserCircle },
+  ] },
 ];
 const MANAGER_ONLY = ['/trainers', '/settings', '/contacts'];
 

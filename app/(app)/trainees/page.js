@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ArrowRightLeft, CheckCheck, ClipboardPaste, FileUp, Layers, Repeat, Undo2, Pencil, Plus, RotateCcw, Search, Trash2, UserCheck, UserX, X } from 'lucide-react';
+import { ArrowRight, ArrowRightLeft, CheckCheck, ClipboardPaste, Flag, FileUp, Layers, Repeat, Undo2, Pencil, Plus, RotateCcw, Search, Trash2, UserCheck, UserX, X } from 'lucide-react';
 import { useApp } from '@/components/AppShell';
 import { Empty, ErrorText, Modal, PageHeader, PageLoader, Spinner } from '@/components/ui';
 import { useTrainees, useTrainers } from '@/lib/hooks';
@@ -11,9 +11,9 @@ import { EXIT_LABELS, isRetraining, notJoining, notJoiningReason, openPeriod, pe
 import { parseTraineeRows } from '@/lib/parseTrainees';
 import DossierImport from '@/components/trainees/DossierImport';
 import RagModal, { canEditRag, RagChip } from '@/components/trainees/RagModal';
+import BulkRagModal from '@/components/trainees/BulkRagModal';
 import PeriodEditor from '@/components/trainees/PeriodEditor';
 import NhtFeedbackShare from '@/components/NhtFeedbackShare';
-import LmsExport, { LmsExportButton } from '@/components/trainees/LmsExport';
 import { FEEDBACK_FORMS } from '@/lib/feedbackForms';
 
 const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -767,7 +767,6 @@ export default function TraineesPage() {
   const [switchItems, setSwitchItems] = useState(null); // { items, title }
   const [newBatch, setNewBatch] = useState(false);
   const [dossier, setDossier] = useState(false);
-  const [lmsOpen, setLmsOpen] = useState(false);
   const [ragFor, setRagFor] = useState(null);
   const trainerNames = useMemo(() => Object.fromEntries(trainers.map((t) => [t.id, t.name])), [trainers]);
   const [batchFilter, setBatchFilter] = useState('all');
@@ -789,6 +788,7 @@ export default function TraineesPage() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [handover, setHandover] = useState(null); // { items, mode }
   const [floor, setFloor] = useState(null); // trainer step: { items, undo }
+  const [bulkRag, setBulkRag] = useState(null); // selected trainees for bulk RAG
   const [feedback, setFeedback] = useState({}); // trainee id → 'taken' | 'shared'
   const loadFeedback = () => sb().from('trainee_feedback').select('trainee_id, status').then(({ data }) => setFeedback(Object.fromEntries((data || []).map((f) => [f.trainee_id, f.status])))).catch(() => {});
   useEffect(() => { loadFeedback(); }, [trainees]);
@@ -874,7 +874,6 @@ export default function TraineesPage() {
         actions={(
           <>
             {isManager && <button data-tour="upload-dossier" className="btn-secondary" onClick={() => setDossier(true)}><FileUp size={16} />Upload Dossier sheet</button>}
-            <LmsExportButton onClick={() => setLmsOpen(true)} />
             <button className="btn-secondary" onClick={() => setNewBatch(true)}><Layers size={16} />New Batch</button>
             <button className="btn-secondary" onClick={() => setBulk(true)}><ClipboardPaste size={16} />Paste from Excel</button>
             <button className="btn-primary" onClick={() => setForm(blank)}><Plus size={16} />Add Trainee</button>
@@ -1012,6 +1011,7 @@ export default function TraineesPage() {
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setSwitchItems({ items: selectedRows })}><Repeat size={14} />Switch trainer</button>
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => undoSwitch(selectedRows)}><Undo2 size={14} />Undo switch</button>}
             <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setMoveItems(selectedRows)}><Layers size={14} />Move to batch</button>
+            <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setBulkRag(selectedRows)}><Flag size={14} />Set RAG</button>
             {!isManager && <button className="btn btn-sm bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => setFloor({ items: selectedRows.filter((t) => !t.exit_reason) })}><CheckCheck size={14} />Training complete</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => bulkStatus('active')}><UserCheck size={14} />Restore</button>}
             {isManager && <button className="btn btn-sm bg-white/10 text-white hover:bg-white/20" onClick={() => setHandover({ items: selectedRows, mode: 'handover' })}><ArrowRightLeft size={14} />Handover</button>}
@@ -1109,8 +1109,10 @@ export default function TraineesPage() {
       {moveItems && <MoveToBatch items={moveItems} batches={batches} trainees={trainees} trainerNames={trainerNames} onClose={() => setMoveItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {switchItems && <SwitchTrainer items={switchItems.items} title={switchItems.title} trainers={trainers} trainerNames={trainerNames} onClose={() => setSwitchItems(null)} onDone={(m) => { showToast(m); clearSelection(); reload(); }} />}
       {dossier && <DossierImport trainers={trainers} trainees={trainees} onClose={() => setDossier(false)} onDone={(m) => { showToast(m); reload(); }} />}
-      {lmsOpen && <LmsExport trainees={trainees} batches={batches} trainers={trainers} onClose={() => setLmsOpen(false)} />}
       {newBatch && <NewBatch trainers={trainers} batches={batches} onClose={() => setNewBatch(false)} onDone={(m, id) => { showToast(m); reload(); if (id) { setBatchFilter(id); setShow('all'); } }} />}
+      {bulkRag && bulkRag.length > 0 && (
+        <BulkRagModal items={bulkRag} onClose={() => setBulkRag(null)} onDone={(msg) => { if (msg) { showToast(msg); clearSelection(); } reload(); }} />
+      )}
       {floor && floor.items.length > 0 && (
         <SentToFloorModal items={floor.items} undo={floor.undo} onClose={() => setFloor(null)}
           onDone={(msg) => { setFloor(null); clearSelection(); reload(); showToast(msg); }} />
