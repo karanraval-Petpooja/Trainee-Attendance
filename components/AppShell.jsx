@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles,
+  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles, Target,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -25,6 +25,7 @@ const REPORTS = [
   { href: '/history', label: 'Attendance History', icon: History },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/overview', label: 'Training overview', icon: PieChart },
+  { href: '/kpi', label: 'Trainer KPI', icon: Target },
 ];
 const TRAINER_GROUPS = [
   { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
