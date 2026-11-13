@@ -97,6 +97,15 @@ export default function TrainersPage() {
     reload();
   };
 
+  // TEST: Live sessions (Google Meet) for this trainer
+  const toggleMeet = async (t) => {
+    const next = !t.meet_beta;
+    const { error } = await sb().from('profiles').update({ meet_beta: next }).eq('id', t.id);
+    if (error) { showToast(error.message, 'error'); return; }
+    showToast(next ? `${t.name} can now test Live sessions (Google Meet).` : `Live sessions test switched off for ${t.name}.`);
+    reload();
+  };
+
   const toggle = async (t) => {
     const next = t.status === 'active' ? 'inactive' : 'active';
     if (next === 'inactive' && !window.confirm(`Deactivate ${t.name}? They won’t be able to sign in.`)) return;
@@ -119,7 +128,7 @@ export default function TrainersPage() {
         {loading ? <PageLoader /> : filtered.length === 0 ? <Empty title="No trainers yet">Add a trainer so they can start marking attendance.</Empty> : (
           <div className="table-wrap">
             <table className="tbl">
-              <thead><tr><th>Name</th><th>Employee ID</th><th>Trainees in training</th><th>Missed marking days</th><th title="Can see and download every trainee's attendance for HR">Reports (all trainees)</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Employee ID</th><th>Trainees in training</th><th>Missed marking days</th><th title="Can see and download every trainee's attendance for HR">Reports (all trainees)</th><th title="Test: run Google Meet sessions from the app">Live sessions (test)</th><th>Status</th><th className="text-right">Actions</th></tr></thead>
               <tbody>
                 {filtered.map((t) => (
                   <tr key={t.id} className={t.status !== 'active' ? 'opacity-60' : ''}>
@@ -132,6 +141,13 @@ export default function TrainersPage() {
                         title={t.report_access ? 'Can take reports for all trainees: click to remove' : 'Click to allow reports for all trainees'}
                         className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${t.report_access ? 'bg-emerald-500' : 'bg-slate-300'}`}>
                         <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${t.report_access ? 'left-[22px]' : 'left-0.5'}`} />
+                      </button>
+                    </td>
+                    <td>
+                      <button type="button" role="switch" aria-checked={!!t.meet_beta} onClick={() => toggleMeet(t)} disabled={t.status !== 'active'}
+                        title={t.meet_beta ? 'Testing Live sessions: click to switch off' : 'Click to let this trainer test Live sessions'}
+                        className={`relative h-6 w-11 rounded-full transition-colors disabled:opacity-40 ${t.meet_beta ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${t.meet_beta ? 'left-[22px]' : 'left-0.5'}`} />
                       </button>
                     </td>
                     <td><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${t.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'}`}>{t.status === 'active' ? 'Active' : 'Inactive'}</span></td>
