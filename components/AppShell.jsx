@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   BarChart3, Bell, CalendarDays, ChevronDown, CalendarRange, CheckCircle2, ClipboardList, FileSpreadsheet, Flag, GraduationCap, PieChart, History, LayoutDashboard,
-  LogOut, Menu, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles, Target,
+  LogOut, Menu, MessageSquareText, Settings, UserCircle, Users, X, Contact, QrCode, Sparkles, Video,
 } from 'lucide-react';
 import { sb } from '@/lib/supabase';
 import { fmtLong, nowInTz } from '@/lib/dates';
@@ -22,10 +22,11 @@ export const useApp = () => useContext(Ctx);
 const REPORTS = [
   { href: '/reports', label: 'Monthly Sheet', icon: FileSpreadsheet },
   { href: '/rag', label: 'RAG Report', icon: Flag },
+  { href: '/feedback-report', label: 'Feedback Report', icon: MessageSquareText },
+  { href: '/lms-results', label: 'LMS Results', icon: GraduationCap },
   { href: '/history', label: 'Attendance History', icon: History },
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/overview', label: 'Training overview', icon: PieChart },
-  { href: '/kpi', label: 'Trainer KPI', icon: Target },
 ];
 const TRAINER_GROUPS = [
   { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
@@ -192,7 +193,11 @@ export default function AppShell({ children }) {
     await sb().from('notifications').update({ read_status: true }).eq('user_id', profile.id).eq('read_status', false);
   }, [profile]);
 
-  const groups = profile?.role === 'manager' ? MANAGER_GROUPS : TRAINER_GROUPS;
+  const baseGroups = profile?.role === 'manager' ? MANAGER_GROUPS : TRAINER_GROUPS;
+  // TEST: Live sessions (Google Meet) only for managers and trainers switched on as testers
+  const groups = profile?.role === 'manager' || profile?.meet_beta
+    ? baseGroups.flatMap((g) => (g.id === 'ojt' ? [g, { id: 'live', title: 'Live sessions (test)', items: [{ href: '/live', label: 'Google Meet sessions', icon: Video }] }] : [g]))
+    : baseGroups;
   const nav = groups.flatMap((g) => g.items);
   const isReport = REPORTS.some((r) => pathname.startsWith(r.href));
   const activeHref = nav.map((n) => n.href).filter((h) => pathname === h || pathname.startsWith(`${h}/`)).sort((a, b) => b.length - a.length)[0];
