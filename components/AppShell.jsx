@@ -30,46 +30,62 @@ const REPORTS = [
 ];
 const TRAINER_GROUPS = [
   { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
-  { id: 'attendance', title: 'Attendance', items: [
-    { href: '/attendance', label: 'Mark Attendance', icon: CheckCircle2 },
-    { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
-  ] },
-  { id: 'data', title: 'Data & Setup', items: [
-    { href: '/trainees', label: 'My Trainees & Batches', icon: GraduationCap },
-  ] },
-  { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
-    { href: '/ojt', label: 'Sessions', icon: ClipboardList },
-    { href: '/ojt/charts', label: 'Charts', icon: PieChart },
-  ] },
+  {
+    id: 'attendance', title: 'Attendance', items: [
+      { href: '/attendance', label: 'Mark Attendance', icon: CheckCircle2 },
+      { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
+    ]
+  },
+  {
+    id: 'data', title: 'Data & Setup', items: [
+      { href: '/trainees', label: 'My Trainees & Batches', icon: GraduationCap },
+    ]
+  },
+  {
+    id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
+      { href: '/ojt', label: 'Sessions', icon: ClipboardList },
+      { href: '/ojt/charts', label: 'Charts', icon: PieChart },
+    ]
+  },
   { id: 'reports', title: 'Reports', items: REPORTS },
-  { id: 'account', title: 'Account', items: [
-    { href: '/notifications', label: 'Notifications', icon: Bell },
-    { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
-    { href: '/profile', label: 'Profile', icon: UserCircle },
-  ] },
+  {
+    id: 'account', title: 'Account', items: [
+      { href: '/notifications', label: 'Notifications', icon: Bell },
+      { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
+      { href: '/profile', label: 'Profile', icon: UserCircle },
+    ]
+  },
 ];
 const MANAGER_GROUPS = [
   { id: 'home', items: [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }] },
-  { id: 'attendance', title: 'Attendance', items: [
-    { href: '/attendance', label: 'Attendance Register', icon: CheckCircle2 },
-    { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
-  ] },
-  { id: 'data', title: 'Data & Setup', items: [
-    { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
-    { href: '/trainers', label: 'Trainers', icon: Users },
-    { href: '/contacts', label: 'Contact Details', icon: Contact },
-    { href: '/settings', label: 'Settings', icon: Settings },
-  ] },
-  { id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
-    { href: '/ojt', label: 'Sessions', icon: ClipboardList },
-    { href: '/ojt/charts', label: 'Charts', icon: PieChart },
-  ] },
+  {
+    id: 'attendance', title: 'Attendance', items: [
+      { href: '/attendance', label: 'Attendance Register', icon: CheckCircle2 },
+      { href: '/timeline', label: 'Date-wise Calendar', icon: CalendarRange },
+    ]
+  },
+  {
+    id: 'data', title: 'Data & Setup', items: [
+      { href: '/trainees', label: 'Trainees & Batches', icon: GraduationCap },
+      { href: '/trainers', label: 'Trainers', icon: Users },
+      { href: '/contacts', label: 'Contact Details', icon: Contact },
+      { href: '/settings', label: 'Settings', icon: Settings },
+    ]
+  },
+  {
+    id: 'ojt', title: 'OJT / Upskill / PIP / Refresher', items: [
+      { href: '/ojt', label: 'Sessions', icon: ClipboardList },
+      { href: '/ojt/charts', label: 'Charts', icon: PieChart },
+    ]
+  },
   { id: 'reports', title: 'Reports', items: REPORTS },
-  { id: 'account', title: 'Account', items: [
-    { href: '/notifications', label: 'Notifications', icon: Bell },
-    { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
-    { href: '/profile', label: 'Profile', icon: UserCircle },
-  ] },
+  {
+    id: 'account', title: 'Account', items: [
+      { href: '/notifications', label: 'Notifications', icon: Bell },
+      { href: '/whats-new', label: 'What’s new & guides', icon: Sparkles },
+      { href: '/profile', label: 'Profile', icon: UserCircle },
+    ]
+  },
 ];
 const MANAGER_ONLY = ['/trainers', '/settings', '/contacts'];
 
@@ -195,7 +211,7 @@ export default function AppShell({ children }) {
 
   const baseGroups = profile?.role === 'manager' ? MANAGER_GROUPS : TRAINER_GROUPS;
   // TEST: Live sessions (Google Meet) only for managers and trainers switched on as testers
-  const groups = profile?.role === 'manager' || profile?.meet_beta
+  const groups = false
     ? baseGroups.flatMap((g) => (g.id === 'ojt' ? [g, { id: 'live', title: 'Live sessions (test)', items: [{ href: '/live', label: 'Google Meet sessions', icon: Video }] }] : [g]))
     : baseGroups;
   const nav = groups.flatMap((g) => g.items);
