@@ -144,7 +144,13 @@ export default function FeedbackReportPage() {
     });
     return out;
   }, [trainees, responses, tracked]);
-  const pool = useMemo(() => [...scopeTo(trainees, trainerId), ...(trainerId === 'all' ? ghosts : [])], [trainees, trainerId, ghosts]);
+  const pool = useMemo(() => {
+    if (trainerId === 'all') return [...scopeTo(trainees, 'all'), ...ghosts];
+    const mine = scopeTo(trainees, trainerId);
+    const have = new Set(mine.map((t) => t.id));
+    const named = new Set(responses.filter((r) => r.trainee_id && r.trainer_id === trainerId).map((r) => r.trainee_id));   // feedback that names this trainer
+    return [...mine, ...trainees.filter((t) => named.has(t.id) && !have.has(t.id))];
+  }, [trainees, trainerId, ghosts, responses]);
   const batchKey = (t) => t._batch?.code || t.batch_id || 'none';   // a batch code is unique, so people of one batch always group together
   // Everyone who has given feedback is listed (even if removed from attendance later). Someone with NO feedback is "pending"
   // only if they can still be asked: active, joined, and not resigned / not certified / dropped out.
@@ -202,7 +208,11 @@ export default function FeedbackReportPage() {
   // Stars: the average of the rating questions in the responses being looked at (follows the batch / trainer / stage filters)
   const wholeView = trainerId === 'all' && batchId === 'all' && training === 'all';
   const scopedIds = new Set(scoped.map((t) => t.id));
-  const basis = !tracked || wholeView ? responses : responses.filter((r) => r.trainee_id && scopedIds.has(r.trainee_id));
+  const basis = !tracked || wholeView ? responses : responses.filter((r) => {
+    if (trainerId !== 'all' && r.trainer_id && r.trainer_id !== trainerId) return false;                          // it names ANOTHER trainer: not theirs
+    if (trainerId !== 'all' && batchId === 'all' && training === 'all' && r.trainer_id === trainerId) return true;  // it names THIS trainer, whoever wrote it
+    return Boolean(r.trainee_id && scopedIds.has(r.trainee_id));
+  });
   const rated = basis.filter((r) => r.rating != null);
   const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   const avg = rated.length ? mean(rated.map((r) => Number(r.rating))) : null;
@@ -217,7 +227,9 @@ export default function FeedbackReportPage() {
     const m = {};
     rated.forEach((r) => {
       const t = r.trainee_id ? tById[r.trainee_id] : null;
-      const name = (t && (names[t.trainer_id] || t.trainer_label)) || (r.trainer_id && names[r.trainer_id]) || r.trainer_name || '';
+      // The trainer the feedback is FOR comes first (named in the form, or the trainer a whole sheet belongs to). The trainee's own
+      // trainer is only the fallback, for forms that do not say.
+      const name = (r.trainer_id && names[r.trainer_id]) || r.trainer_name || (t && (names[t.trainer_id] || t.trainer_label)) || '';
       if (name) (m[name] ||= []).push(Number(r.rating));
     });
     return Object.entries(m).map(([name, a]) => ({ name, avg: mean(a), n: a.length })).sort((a, b) => b.avg - a.avg);
@@ -312,9 +324,9 @@ export default function FeedbackReportPage() {
                 ))}
               </div>
               <div>
-                {byTrainer.length > 1 ? (
+                {byTrainer.length >= 1 ? (
                   <>
-                    <div className="mb-2 text-xs font-semibold text-slate-500">Top rated trainers</div>
+                    <div className="mb-2 text-xs font-semibold text-slate-500">{byTrainer.length > 1 ? 'Top rated trainers' : 'Rated trainer'}</div>
                     <div className="space-y-1.5">
                       {byTrainer.slice(0, 5).map((t, i) => (
                         <div key={t.name} className="flex items-center justify-between gap-3 text-sm">
