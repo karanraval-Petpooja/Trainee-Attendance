@@ -15,6 +15,8 @@ import { downloadTableXlsx } from '@/lib/monthlySheet';
 // in the trainee list, so for them the report lists the responses only.
 const isSales = (t) => /sales/i.test(`${t._batch?.purpose || ''} ${t.track || ''}`);
 const TRACK = { nht: (t) => !isSales(t), sales: (t) => isSales(t) };
+// The Sales feedback is always for Jasmin Babla, whoever the trainee's own trainer is
+const SALES_TRAINER = 'Jasmin Babla';
 const VIA = { code: 'E Code', email: 'email', name: 'name', manual: 'linked by manager' };
 
 // 0-5 stars, partly filled for averages (4.5 = four and a half stars)
@@ -229,12 +231,12 @@ export default function FeedbackReportPage() {
       const t = r.trainee_id ? tById[r.trainee_id] : null;
       // The trainer the feedback is FOR comes first (named in the form, or the trainer a whole sheet belongs to). The trainee's own
       // trainer is only the fallback, for forms that do not say.
-      const name = (r.trainer_id && names[r.trainer_id]) || r.trainer_name || (t && (names[t.trainer_id] || t.trainer_label)) || '';
+      const name = form === 'sales' ? SALES_TRAINER : (r.trainer_id && names[r.trainer_id]) || r.trainer_name || (t && (names[t.trainer_id] || t.trainer_label)) || '';
       if (name) (m[name] ||= []).push(Number(r.rating));
     });
     return Object.entries(m).map(([name, a]) => ({ name, avg: mean(a), n: a.length })).sort((a, b) => b.avg - a.avg);
   })();
-  const trainerOf = (t) => names[t.trainer_id] || t.trainer_label || '—';
+  const trainerOf = (t) => (form === 'sales' ? SALES_TRAINER : null) || names[t.trainer_id] || t.trainer_label || '—';
 
   const refresh = async () => {
     setRefreshing(true);
@@ -482,7 +484,7 @@ export default function FeedbackReportPage() {
                     <tr key={r.id}>
                       <td className="font-semibold text-slate-800">{r.respondent_name || '—'}</td>
                       <td className="text-slate-600">{r.respondent_email || '—'}</td>
-                      <td className="text-slate-600">{r.trainer_name || (r.trainer_id ? names[r.trainer_id] : '') || '—'}</td>
+                      <td className="text-slate-600">{form === 'sales' ? SALES_TRAINER : r.trainer_name || (r.trainer_id ? names[r.trainer_id] : '') || '—'}</td>
                       <td className="text-slate-600">{r.batch_code || '—'}</td>
                       {tracked && <td className="text-xs text-slate-600">{r.trainee_id ? `Linked to ${tById[r.trainee_id]?.name || 'a trainee'}, not in the list above` : 'Not linked'}</td>}
                       <td><RatingCell r={r} /></td>
