@@ -37,18 +37,18 @@ function pushFeedback() {
     .map(function (r) { return r.map(function (c) { return c instanceof Date ? c.toISOString() : c; }); });
 
   let added = 0, already = 0;
-  for (let i = 0; i < rows.length; i += 500) {
+  for (let i = 0; i < rows.length; i += 100) {
     const res = UrlFetchApp.fetch(CONFIG.APP_URL.replace(/\/$/, '') + '/api/feedback-push', {
       method: 'post', contentType: 'application/json', muteHttpExceptions: true,
       headers: { 'x-sync-secret': String(CONFIG.SYNC_SECRET).trim() },
-      payload: JSON.stringify({ formId: CONFIG.FORM_ID, header: header, rows: rows.slice(i, i + 500) }),
+      payload: JSON.stringify({ formId: CONFIG.FORM_ID, header: header, rows: rows.slice(i, i + 100) }),
     });
     const code = res.getResponseCode();
     let j = {};
     try { j = JSON.parse(res.getContentText()); } catch (e) { /* not JSON */ }
     if (code !== 200) throw new Error('App said ' + code + ': ' + (j.error || res.getContentText().slice(0, 300)));
     added += j.added || 0; already += j.alreadyInApp || 0;
-    if (j.errors && j.errors.length) Logger.log('Problems: ' + j.errors.join(' | '));
+    if (j.errors && j.errors.length) { Logger.log('Problems: ' + j.errors.join(' | ')); break; }
     if (j.skippedColumns && j.skippedColumns.length) Logger.log('Columns not in the database (left out): ' + j.skippedColumns.join(', '));
   }
   Logger.log('Responses in sheet: ' + rows.length + ' · newly added: ' + added + ' · already in app: ' + already);

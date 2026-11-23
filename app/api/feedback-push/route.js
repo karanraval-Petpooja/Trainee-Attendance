@@ -100,18 +100,19 @@ export async function POST(req) {
       }
       return a.from('feedback_responses').insert(list.map(strip));
     };
+    // Fast: 100 rows per call. If a call fails, ONE row is tried to get the reason, then it stops (no slow row-by-row retries).
+    const started = Date.now();
     let added = 0;
-    for (let i = 0; i < out.length; i += 200) {
-      const chunk = out.slice(i, i + 200);
+    for (let i = 0; i < out.length; i += 100) {
+      if (Date.now() - started > 40000) { errors.push('Time limit: run pushFeedback again to send the rest.'); break; }
+      const chunk = out.slice(i, i + 100);
       const { error } = await insert(chunk);
       if (!error) { added += chunk.length; continue; }
-      for (const r of chunk) {
-        const { error: e } = await insert([r]);
-        if (e) errors.push(`${r.respondent_email || 'row'} (${r.submitted_at}): ${e.message}`); else added += 1;
-      }
+      const { error: e } = await insert([chunk[0]]);
+      errors.push(`Could not save responses: ${(e || error).message}`);
+      break;
     }
-    // Link responses to trainees by email (the app's own matching), if that function exists
-    if (added) await a.rpc('match_feedback_responses').then(() => {}, () => {});
+    // (Linking to trainees is done by the app itself when a manager opens the Feedback Report.)
 
     return Response.json({ ok: true, form: formId, rowsReceived: body.rows.length, added, alreadyInApp: body.rows.length - out.length,
       skippedColumns: [...dropped], errors: errors.slice(0, 20) });
