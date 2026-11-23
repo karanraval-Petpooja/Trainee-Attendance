@@ -49,9 +49,12 @@ export async function POST(req) {
     const a = admin();
     const trainers = await fetchAll(() => a.from('profiles').select('id, name').in('role', ['trainer', 'manager']).order('id'));
     // Already in the app for this form: same email + same submitted time
-    const have = await fetchAll(() => a.from('feedback_responses').select('id, respondent_email, submitted_at').eq('form_id', formId).order('id'));
+    const have = await fetchAll(() => a.from('feedback_responses').select('id, respondent_email, submitted_at, row_key').eq('form_id', formId).order('id'));
     const keyOf = (email, t) => `${String(email || '').trim().toLowerCase()}|${new Date(t).getTime()}`;
     const seen = new Set(have.map((r) => keyOf(r.respondent_email, r.submitted_at)));
+    const seenRowKeys = new Set(have.map((r) => r.row_key).filter(Boolean));
+    // row_key: one fixed key per response (form + email + submitted time), so the same response is never saved twice
+    const rowKeyOf = (email, t) => `${formId}|push|${String(email || '').trim().toLowerCase()}|${new Date(t).toISOString()}`;
 
     const out = [];
     for (const row of body.rows) {
@@ -60,8 +63,9 @@ export async function POST(req) {
       if (!t || Number.isNaN(t.getTime())) continue;                       // empty / broken row
       const email = cEmail >= 0 ? String(row[cEmail] || '').trim().toLowerCase() || null : null;
       const k = keyOf(email, t);
-      if (seen.has(k)) continue;
-      seen.add(k);
+      const rowKey = rowKeyOf(email, t);
+      if (seen.has(k) || seenRowKeys.has(rowKey)) continue;
+      seen.add(k); seenRowKeys.add(rowKey);
       const answers = []; const ratings = {};
       header.forEach((h, i) => {
         if (!h || SKIP.test(plain(h)) || i === cTime || i === cEmail) return;
@@ -75,6 +79,7 @@ export async function POST(req) {
       const trainerName = cTrainer >= 0 ? String(row[cTrainer] || '').trim() || null : null;
       out.push({
         form_id: formId,
+        row_key: rowKey,
         submitted_at: t.toISOString(),
         respondent_email: email,
         respondent_name: (cName >= 0 && String(row[cName] || '').trim()) || nameFromEmail(email),
