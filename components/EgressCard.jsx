@@ -11,6 +11,17 @@ export default function EgressCard() {
   const [start, setStart] = useState(null);
   const [form, setForm] = useState({ day: settings?.egress_cycle_day ?? 1, gb: settings?.egress_alert_gb ?? 2.5, email: settings?.egress_alert_email ?? 'karan.raval@petpooja.com' });
   const [busy, setBusy] = useState(false);
+  const [actual, setActual] = useState('');
+  // Correct the estimate with the real figure from Supabase → Usage → Egress
+  const calibrate = async () => {
+    const gb = Number(actual);
+    if (!(gb >= 0) || actual === '') { showToast('Enter the Egress GB shown in Supabase → Usage', 'error'); return; }
+    setBusy(true);
+    const { error } = await sb().rpc('calibrate_egress', { p_actual_gb: gb });
+    setBusy(false);
+    if (error) { showToast(error.message, 'error'); return; }
+    setActual(''); showToast('Data usage corrected to match Supabase.'); reloadSettings?.(); load();
+  };
   const load = async () => {
     const [{ data: u }, { data: c }] = await Promise.all([sb().rpc('egress_used_gb'), sb().rpc('egress_cycle_start')]);
     setUsed(u ?? null); setStart(c ?? null);
@@ -49,6 +60,14 @@ export default function EgressCard() {
       <div className="mt-3 flex items-center justify-between gap-3">
         <p className="text-xs text-slate-500">Checked every hour; one notification per cycle (in the app and on the phone). The cycle start day is on Supabase → Usage (“Current billing cycle”).</p>
         <button className="btn-primary btn-sm shrink-0" onClick={save} disabled={busy}>Save</button>
+      </div>
+      <div className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
+        <div>
+          <label className="label" htmlFor="eg-actual">Supabase → Usage shows Egress (GB)</label>
+          <input id="eg-actual" type="number" min="0" step="0.01" className="input w-40" placeholder="e.g. 0.67" value={actual} onChange={(e) => setActual(e.target.value)} />
+        </div>
+        <button className="btn-secondary btn-sm" onClick={calibrate} disabled={busy}>Correct the estimate</button>
+        <p className="basis-full text-xs text-slate-500">The app counts data before compression, so its count runs higher than Supabase's. Type Supabase's figure now and then; the app adjusts to match.</p>
       </div>
     </section>
   );
